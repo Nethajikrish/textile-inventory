@@ -31,3 +31,27 @@ function paging(): array
     $per  = min(100, max(1, (int)($_GET['per_page'] ?? 10)));
     return [$page, $per, ($page - 1) * $per];
 }
+
+// Client error raised deep inside a transaction; the router's exception handler turns it into fail().
+class HttpError extends RuntimeException
+{
+    public function __construct(string $message, int $status = 422)
+    {
+        parent::__construct($message, $status);
+    }
+}
+
+function valid_date($s): bool
+{
+    if (!is_string($s)) return false;
+    $d = DateTime::createFromFormat('Y-m-d', $s);
+    return $d && $d->format('Y-m-d') === $s;
+}
+
+// Optional ?from=YYYY-MM-DD&to=YYYY-MM-DD filter: returns [from|null, to|null]
+function date_range(): array
+{
+    $from = $_GET['from'] ?? '';
+    $to = $_GET['to'] ?? '';
+    return [valid_date($from) ? $from : null, valid_date($to) ? $to : null];
+}

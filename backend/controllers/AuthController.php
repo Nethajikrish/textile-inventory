@@ -35,4 +35,21 @@ class AuthController
     {
         ok($user);
     }
+
+    public static function changePassword(array $user): void
+    {
+        $d = input();
+        $current = (string)($d['current_password'] ?? '');
+        $new = (string)($d['new_password'] ?? '');
+        if (strlen($new) < 8) fail('New password must be at least 8 characters', 422);
+
+        $stmt = db()->prepare('SELECT password_hash FROM users WHERE id = ?');
+        $stmt->execute([$user['id']]);
+        $hash = $stmt->fetchColumn();
+        if (!$hash || !password_verify($current, $hash)) fail('Current password is incorrect', 422);
+
+        db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+            ->execute([password_hash($new, PASSWORD_DEFAULT), $user['id']]);
+        ok(null, 'Password changed');
+    }
 }

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import api from '../services/api';
 
 const AuthContext = createContext(null);
@@ -11,6 +11,19 @@ export function AuthProvider({ children }) {
       return null;
     }
   });
+
+  // Pick up role changes made by an admin since this user signed in.
+  useEffect(() => {
+    if (!localStorage.getItem('token')) return;
+    api.get('/me').then(({ data }) => {
+      setUser((u) => {
+        if (!u || u.role === data.data.role) return u;
+        const next = { ...u, role: data.data.role };
+        localStorage.setItem('user', JSON.stringify(next));
+        return next;
+      });
+    }).catch(() => {});
+  }, []);
 
   const login = async (email, password) => {
     const { data } = await api.post('/login', { email, password });
