@@ -16,7 +16,7 @@ const links = [
   { to: '/purchases', label: 'Purchases' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/customers', label: 'Customers' },
-  { to: '/masters', label: 'Categories & Units' },
+  { to: '/masters', label: 'Masters' },
   { to: '/reports', label: 'Reports', roles: MANAGE },
   { to: '/users', label: 'Users', roles: ['Admin'] },
   { to: '/settings', label: 'Company Settings', roles: ['Admin'] },

@@ -57,6 +57,7 @@ CREATE TABLE products (
   barcode VARCHAR(50) NULL UNIQUE,
   name VARCHAR(150) NOT NULL,
   brand VARCHAR(80),
+  model VARCHAR(80),
   category_id INT UNSIGNED,
   unit_id INT UNSIGNED NOT NULL,
   fabric_type VARCHAR(50),
@@ -66,7 +67,11 @@ CREATE TABLE products (
   width_inch DECIMAL(6,2),
   lot_no VARCHAR(50),
   purchase_price DECIMAL(12,2) NOT NULL DEFAULT 0,
-  selling_price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  mrp DECIMAL(12,2) NOT NULL DEFAULT 0,
+  discount_type ENUM('percent','amount') NOT NULL DEFAULT 'percent',
+  discount_value DECIMAL(12,2) NOT NULL DEFAULT 0,
+  selling_price DECIMAL(12,2) NOT NULL DEFAULT 0,  -- MRP - discount, GST inclusive
+  gst_percent DECIMAL(5,2) NOT NULL DEFAULT 5,
   stock_qty DECIMAL(14,3) NOT NULL DEFAULT 0,
   min_stock DECIMAL(14,3) NOT NULL DEFAULT 0,
   image VARCHAR(255),
@@ -106,23 +111,36 @@ CREATE TABLE purchase_items (
   FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB;
 
+CREATE TABLE counters (
+  id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
 CREATE TABLE sales (
   id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT,
   invoice_no VARCHAR(30) NOT NULL UNIQUE,
   customer_id INT UNSIGNED NULL,  -- NULL = walk-in customer
+  counter_id INT UNSIGNED NULL,
   sale_date DATE NOT NULL,
+  sale_time TIME NULL,
   subtotal DECIMAL(14,2) NOT NULL DEFAULT 0,
   discount_type ENUM('percent','amount') NOT NULL DEFAULT 'percent',
   discount_value DECIMAL(14,2) NOT NULL DEFAULT 0,
   discount_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gst_inclusive TINYINT(1) NOT NULL DEFAULT 1,  -- 0 = older bill with GST added on top
+  taxable_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   tax_percent DECIMAL(5,2) NOT NULL DEFAULT 0,
-  tax_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  tax_amount DECIMAL(14,2) NOT NULL DEFAULT 0,  -- CGST + SGST
+  cgst_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  sgst_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  round_off DECIMAL(6,2) NOT NULL DEFAULT 0,
   total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   status ENUM('completed','cancelled') NOT NULL DEFAULT 'completed',
   notes TEXT,
   created_by INT UNSIGNED,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
+  FOREIGN KEY (counter_id) REFERENCES counters(id),
   FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
   INDEX idx_sale_date (sale_date)
 ) ENGINE=InnoDB;
@@ -132,8 +150,12 @@ CREATE TABLE sale_items (
   sale_id INT UNSIGNED NOT NULL,
   product_id INT UNSIGNED NOT NULL,
   qty DECIMAL(14,3) NOT NULL,
-  rate DECIMAL(12,2) NOT NULL,
+  mrp DECIMAL(12,2) NOT NULL DEFAULT 0,
+  rate DECIMAL(12,2) NOT NULL,  -- final price incl. GST
   amount DECIMAL(14,2) NOT NULL,
+  gst_percent DECIMAL(5,2) NOT NULL DEFAULT 0,
+  taxable_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  gst_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
   FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
   FOREIGN KEY (product_id) REFERENCES products(id)
 ) ENGINE=InnoDB;
@@ -187,3 +209,6 @@ SELECT id, 'opening', stock_qty, stock_qty, 'Opening stock', 1 FROM products;
 
 -- Barcodes for the seed products: prefix + id, e.g. J0001
 UPDATE products SET barcode = CONCAT('J', LPAD(id, 4, '0')) WHERE barcode IS NULL;
+
+INSERT INTO counters (name) VALUES ('Counter 1');
+UPDATE products SET mrp = selling_price;

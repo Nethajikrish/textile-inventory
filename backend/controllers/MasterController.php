@@ -2,13 +2,14 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
 
-// Categories & units master data, plus the dashboard summary.
+// Categories, units & billing counters master data, plus the dashboard summary.
 class MasterController
 {
     // table => [columns, required columns]
     private const TABLES = [
         'categories' => [['name'], ['name']],
         'units'      => [['name', 'short_name'], ['name', 'short_name']],
+        'counters'   => [['name'], ['name']],
     ];
 
     public static function index(string $table): void
@@ -36,10 +37,12 @@ class MasterController
 
     public static function destroy(string $table, int $id): void
     {
-        $col = $table === 'categories' ? 'category_id' : 'unit_id';
-        $s = db()->prepare("SELECT COUNT(*) FROM products WHERE $col = ? AND is_active = 1");
-        $s->execute([$id]);
-        if ($s->fetchColumn() > 0) fail('In use by products; reassign them first', 409);
+        $col = ['categories' => 'category_id', 'units' => 'unit_id'][$table] ?? null;
+        if ($col) {
+            $s = db()->prepare("SELECT COUNT(*) FROM products WHERE $col = ? AND is_active = 1");
+            $s->execute([$id]);
+            if ($s->fetchColumn() > 0) fail('In use by products; reassign them first', 409);
+        }
         try {
             db()->prepare("DELETE FROM $table WHERE id = ?")->execute([$id]);
         } catch (PDOException $e) {

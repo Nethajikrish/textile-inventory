@@ -7,7 +7,8 @@ export const itemsTotal = (items) => items.reduce((sum, it) => sum + (Number(it.
 // Line items for purchases and sales.
 // priceField: product field used to prefill the rate ("purchase_price" or "selling_price")
 // checkStock: warn when qty exceeds what's in stock (sales)
-export default function ItemsEditor({ products, items, onChange, priceField, checkStock = false }) {
+// showPricing: show MRP, discount and GST rate under the product (sales; prices include GST)
+export default function ItemsEditor({ products, items, onChange, priceField, checkStock = false, showPricing = false }) {
   const byId = Object.fromEntries(products.map((p) => [String(p.id), p]));
 
   const update = (i, patch) => onChange(items.map((it, j) => (j === i ? { ...it, ...patch } : it)));
@@ -21,7 +22,7 @@ export default function ItemsEditor({ products, items, onChange, priceField, che
             <tr>
               <th className="py-2 pr-2">Product</th>
               <th className="w-28 py-2 pr-2">Qty</th>
-              <th className="w-32 py-2 pr-2">Rate</th>
+              <th className="w-32 py-2 pr-2">{showPricing ? 'Price (incl. GST)' : 'Rate'}</th>
               <th className="w-32 py-2 pr-2 text-right">Amount</th>
               <th className="w-8" />
             </tr>
@@ -43,6 +44,13 @@ export default function ItemsEditor({ products, items, onChange, priceField, che
                     />
                     {p && (
                       <div className={`mt-0.5 text-xs ${short ? 'text-red-600' : 'text-slate-500'}`}>
+                        {showPricing && (
+                          <>
+                            MRP {money(p.mrp)}
+                            {Number(p.mrp) > Number(p.selling_price) && <> · Disc {money(p.mrp - p.selling_price)}</>}
+                            {' '}· GST {Number(p.gst_percent)}% ·{' '}
+                          </>
+                        )}
                         In stock: {qty(p.stock_qty)} {p.unit}{short && ' — not enough stock'}
                       </div>
                     )}

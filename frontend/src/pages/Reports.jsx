@@ -35,11 +35,12 @@ const REPORTS = {
     columns: [
       { key: 'invoice_no', label: 'Invoice no.' }, { key: 'sale_date', label: 'Date', type: 'date' },
       { key: 'customer', label: 'Customer' }, { key: 'gstin', label: 'GSTIN' },
-      { key: 'subtotal', label: 'Subtotal', type: 'money' }, { key: 'discount_amount', label: 'Offer', type: 'money' },
-      { key: 'taxable_value', label: 'Taxable value', type: 'money' }, { key: 'tax_percent', label: 'GST %', type: 'qty' },
-      { key: 'tax_amount', label: 'GST', type: 'money' }, { key: 'total_amount', label: 'Total', type: 'money' },
+      { key: 'subtotal', label: 'Subtotal', type: 'money' }, { key: 'discount_amount', label: 'Discount', type: 'money' },
+      { key: 'taxable_value', label: 'Taxable value', type: 'money' }, { key: 'cgst_amount', label: 'CGST', type: 'money' },
+      { key: 'sgst_amount', label: 'SGST', type: 'money' }, { key: 'round_off', label: 'Round off', type: 'money' },
+      { key: 'total_amount', label: 'Net amount', type: 'money' },
     ],
-    totals: ['subtotal', 'discount_amount', 'taxable_value', 'tax_amount', 'total_amount'],
+    totals: ['subtotal', 'discount_amount', 'taxable_value', 'cgst_amount', 'sgst_amount', 'round_off', 'total_amount'],
   },
   supplierWise: {
     label: 'Supplier-wise',

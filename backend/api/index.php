@@ -51,6 +51,7 @@ switch ($resource) {
 
     case 'categories':
     case 'units':
+    case 'counters':
         if ($method === 'GET') MasterController::index($resource);
         $allow($canWrite);
         if ($method === 'POST' && !$id)  MasterController::store($resource);
@@ -93,6 +94,7 @@ switch ($resource) {
         break;
 
     case 'sales':
+        if ($method === 'GET' && $action === 'next-number') SaleController::nextNumber();
         if ($method === 'GET') { $id ? SaleController::show($id) : SaleController::index(); }
         if ($method === 'POST' && !$id) SaleController::store($user); // any role can invoice
         $allow($canWrite);

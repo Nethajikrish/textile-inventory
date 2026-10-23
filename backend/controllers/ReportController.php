@@ -56,8 +56,8 @@ class ReportController
 
         $s = db()->prepare(
             "SELECT s.invoice_no, s.sale_date, COALESCE(c.name, 'Walk-in customer') AS customer, c.gstin,
-                    s.subtotal, s.discount_amount, s.subtotal - s.discount_amount AS taxable_value,
-                    s.tax_percent, s.tax_amount, s.total_amount
+                    s.subtotal, s.discount_amount, s.taxable_amount AS taxable_value,
+                    s.cgst_amount, s.sgst_amount, s.round_off, s.total_amount
              FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
              WHERE $where ORDER BY s.sale_date, s.id"
         );

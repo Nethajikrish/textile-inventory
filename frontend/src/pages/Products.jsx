@@ -4,12 +4,15 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Button, ErrorBox, Field, Modal, Pagination, Select, Table, Td } from '../components/ui.jsx';
 import { assetUrl, errMsg, money, qty } from '../utils/format';
+import { sellingPrice } from '../utils/bill';
 
+const GST_RATES = [0, 5, 12, 18, 28].map((r) => ({ id: String(r), name: `${r}%` }));
 const FABRIC_TYPES = ['Cotton', 'Silk', 'Polyester', 'Linen', 'Wool', 'Rayon', 'Viscose', 'Nylon', 'Denim', 'Blended'];
 
 const emptyForm = {
-  sku: '', barcode: '', name: '', brand: '', size: '', category_id: '', unit_id: '', fabric_type: '', color: '',
-  gsm: '', width_inch: '', lot_no: '', purchase_price: '', selling_price: '', min_stock: '', opening_stock: '',
+  sku: '', barcode: '', name: '', brand: '', model: '', size: '', category_id: '', unit_id: '', fabric_type: '', color: '',
+  gsm: '', width_inch: '', lot_no: '', purchase_price: '', mrp: '', discount_type: 'percent', discount_value: '',
+  gst_percent: '5', min_stock: '', opening_stock: '',
 };
 
 export default function Products() {
@@ -59,7 +62,9 @@ export default function Products() {
 
   const openEdit = (p) => {
     setEditing(p);
-    setForm(Object.fromEntries(Object.keys(emptyForm).map((k) => [k, p[k] ?? ''])));
+    const f = Object.fromEntries(Object.keys(emptyForm).map((k) => [k, p[k] ?? '']));
+    f.gst_percent = String(Number(p.gst_percent)); // "5.00" -> "5" to match the GST options
+    setForm(f);
     setImageFile(null);
     setError('');
   };
@@ -162,7 +167,11 @@ export default function Products() {
             <Td className={Number(p.stock_qty) <= Number(p.min_stock) ? 'font-semibold text-red-600' : ''}>
               {qty(p.stock_qty)} {p.unit}
             </Td>
-            <Td>{money(p.selling_price)}</Td>
+            <Td className="whitespace-nowrap">
+              {Number(p.mrp) > Number(p.selling_price) && <div className="text-xs text-slate-400 line-through">{money(p.mrp)}</div>}
+              <div>{money(p.selling_price)}</div>
+              <div className="text-xs text-slate-500">GST {Number(p.gst_percent)}%</div>
+            </Td>
             <Td className="space-x-3 whitespace-nowrap text-right">
               <Link to={`/labels?items=${p.id}:1`} className="text-slate-600 hover:underline">Sticker</Link>
               <Link to={`/stock?tab=ledger&product=${p.id}`} className="text-slate-600 hover:underline">Ledger</Link>
@@ -188,6 +197,7 @@ export default function Products() {
               <Field label="Name *" value={form.name} onChange={set('name')} required />
               <Field label="Barcode" value={form.barcode} onChange={set('barcode')} placeholder="Auto-generated if blank" />
               <Field label="Brand" value={form.brand} onChange={set('brand')} />
+              <Field label="Model" value={form.model} onChange={set('model')} />
               <Select label="Category" value={form.category_id} onChange={set('category_id')} options={categories} />
               <Select label="Unit *" value={form.unit_id} onChange={set('unit_id')} options={units} required />
               <label className="block text-xs text-slate-600">
@@ -201,7 +211,24 @@ export default function Products() {
               <Field label="Width (inch)" type="number" min="0" value={form.width_inch} onChange={set('width_inch')} />
               <Field label="Lot / design no." value={form.lot_no} onChange={set('lot_no')} />
               <Field label="Purchase price" type="number" min="0" value={form.purchase_price} onChange={set('purchase_price')} />
-              <Field label="Selling price" type="number" min="0" value={form.selling_price} onChange={set('selling_price')} />
+              <Field label="MRP / actual price (₹)" type="number" min="0" value={form.mrp} onChange={set('mrp')} />
+              <div className="flex items-end gap-1">
+                <label className="block text-xs text-slate-600">
+                  Discount
+                  <select value={form.discount_type} onChange={set('discount_type')} className="mt-1 block rounded border border-slate-300 px-1 py-1.5 text-sm">
+                    <option value="percent">%</option>
+                    <option value="amount">₹</option>
+                  </select>
+                </label>
+                <Field label=" " type="number" min="0" max={form.discount_type === 'percent' ? '100' : undefined} value={form.discount_value} onChange={set('discount_value')} placeholder="0" className="flex-1" />
+              </div>
+              <div className="block text-xs text-slate-600">
+                Selling price (incl. GST)
+                <div className="mt-1 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm font-semibold text-slate-800">
+                  {money(sellingPrice(form.mrp, form.discount_type, form.discount_value))}
+                </div>
+              </div>
+              <Select label="GST %" value={form.gst_percent} onChange={set('gst_percent')} options={GST_RATES} placeholder="Select" required />
               <Field label="Min stock (alert level)" type="number" min="0" value={form.min_stock} onChange={set('min_stock')} />
               {!editing && (
                 <Field label="Opening stock" type="number" min="0" value={form.opening_stock} onChange={set('opening_stock')} />

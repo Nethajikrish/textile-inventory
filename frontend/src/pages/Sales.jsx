@@ -3,8 +3,9 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Badge, Button, ErrorBox, Field, Pagination, Select, Table, Tabs, Td, TextArea } from '../components/ui.jsx';
-import ItemsEditor, { blankItem, itemsTotal } from '../components/ItemsEditor.jsx';
-import { errMsg, fmtDate, money, today } from '../utils/format';
+import ItemsEditor, { blankItem } from '../components/ItemsEditor.jsx';
+import { errMsg, fmtDate, fmtTime, money, today } from '../utils/format';
+import { computeBill } from '../utils/bill';
 
 const STATUSES = [{ id: 'completed', name: 'Completed' }, { id: 'cancelled', name: 'Cancelled' }];
 const TABS = [{ key: 'new', label: 'New Invoice' }, { key: 'list', label: 'Sales List' }];
@@ -60,7 +61,7 @@ function SalesList() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-3">
-          <input value={filters.search} onChange={setFilter('search')} placeholder="Search invoice no. or customer..." className="w-64 rounded border border-slate-300 px-3 py-2 text-sm" />
+          <input value={filters.search} onChange={setFilter('search')} placeholder="Search bill no. or customer..." className="w-64 rounded border border-slate-300 px-3 py-2 text-sm" />
           <Select value={filters.status} onChange={setFilter('status')} options={STATUSES} placeholder="All statuses" />
           <Field label="From" type="date" value={filters.from} onChange={setFilter('from')} />
           <Field label="To" type="date" value={filters.to} onChange={setFilter('to')} />
@@ -69,16 +70,18 @@ function SalesList() {
 
       <ErrorBox>{error}</ErrorBox>
 
-      <Table columns={[{ label: 'Invoice no.' }, { label: 'Date' }, { label: 'Customer' }, { label: 'Status' }, { label: 'Amount', className: 'text-right' }, { label: '' }]} empty="No invoices found">
+      <Table columns={[{ label: 'Bill no.' }, { label: 'Date & time' }, { label: 'Counter' }, { label: 'Customer' }, { label: 'Status' }, { label: 'Amount', className: 'text-right' }, { label: '' }]} empty="No invoices found">
         {items.map((s) => (
           <tr key={s.id} className="border-t">
             <Td className="font-mono">{s.invoice_no}</Td>
-            <Td>{fmtDate(s.sale_date)}</Td>
+            <Td className="whitespace-nowrap">{fmtDate(s.sale_date)} {fmtTime(s.sale_time)}</Td>
+            <Td>{s.counter}</Td>
             <Td>{s.customer}</Td>
             <Td><Badge>{s.status}</Badge></Td>
             <Td className="text-right">{money(s.total_amount)}</Td>
             <Td className="space-x-3 whitespace-nowrap text-right">
               <Link to={`/sales/${s.id}/print`} className="text-indigo-600 hover:underline">View / Print</Link>
+              <Link to={`/sales/${s.id}/print?copy=duplicate`} className="text-slate-600 hover:underline">Duplicate bill</Link>
               {canCancel && s.status === 'completed' && (
                 <button onClick={() => cancel(s)} className="text-red-600 hover:underline">Cancel</button>
               )}
@@ -92,11 +95,24 @@ function SalesList() {
   );
 }
 
+const nowTime = () => {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+const savedCounter = () => {
+  try { return localStorage.getItem('counterId') || ''; } catch { return ''; }
+};
+
 function NewInvoice({ onCancel }) {
   const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [form, setForm] = useState({ customer_id: '', sale_date: today(), tax_percent: '5', discount_type: 'percent', discount_value: '', notes: '' });
+  const [counters, setCounters] = useState([]);
+  const [billNo, setBillNo] = useState('');
+  const [form, setForm] = useState({
+    customer_id: '', counter_id: savedCounter(), sale_date: today(), sale_time: nowTime(),
+    discount_type: 'percent', discount_value: '', notes: '',
+  });
   const [lines, setLines] = useState([blankItem()]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -105,25 +121,37 @@ function NewInvoice({ onCancel }) {
   useEffect(() => {
     api.get('/customers', { params: { all: 1 } }).then((r) => setCustomers(r.data.data));
     api.get('/products', { params: { all: 1 } }).then((r) => setProducts(r.data.data));
+    api.get('/sales/next-number').then((r) => setBillNo(r.data.data.invoice_no)).catch(() => {});
+    api.get('/counters').then((r) => {
+      const list = r.data.data;
+      setCounters(list);
+      // Keep the counter this computer used last; otherwise the first one.
+      setForm((f) => (list.some((c) => String(c.id) === f.counter_id) ? f : { ...f, counter_id: list[0] ? String(list[0].id) : '' }));
+    });
   }, []);
 
-  const subtotal = itemsTotal(lines);
-  const offerValue = Number(form.discount_value) || 0;
+  const byId = Object.fromEntries(products.map((p) => [String(p.id), p]));
+  const billLines = lines
+    .filter((l) => byId[l.product_id])
+    .map((l) => ({ amount: (Number(l.qty) || 0) * (Number(l.rate) || 0), gst_percent: byId[l.product_id].gst_percent }));
+  const bill = computeBill(billLines, form.discount_type, form.discount_value);
+  const mrpTotal = lines.reduce((sum, l) => sum + (Number(l.qty) || 0) * Math.max(Number(byId[l.product_id]?.mrp) || 0, Number(l.rate) || 0), 0);
+  const saved = mrpTotal - bill.total;
+
+  const discValue = Number(form.discount_value) || 0;
   const isPercent = form.discount_type === 'percent';
-  const discount = Math.round((isPercent ? subtotal * offerValue / 100 : offerValue) * 100) / 100;
-  const taxable = subtotal - discount;
-  const tax = Math.round(taxable * (Number(form.tax_percent) || 0)) / 100;
-  const offerError = offerValue < 0 ? 'Offer cannot be negative'
-    : isPercent && offerValue > 100 ? 'Offer % must be between 0 and 100'
-    : discount > subtotal ? 'Offer cannot exceed the subtotal' : '';
+  const discountError = discValue < 0 ? 'Discount cannot be negative'
+    : isPercent && discValue > 100 ? 'Discount % must be between 0 and 100'
+    : bill.discount > bill.subtotal ? 'Discount cannot exceed the subtotal' : '';
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const save = async (e) => {
     e.preventDefault();
-    if (offerError) return setError(offerError);
+    if (discountError) return setError(discountError);
     setError('');
     setSaving(true);
     try {
+      try { localStorage.setItem('counterId', form.counter_id); } catch { /* ignore */ }
       const res = await api.post('/sales', { ...form, items: lines });
       navigate(`/sales/${res.data.data.id}/print`);
     } catch (err) {
@@ -135,8 +163,15 @@ function NewInvoice({ onCancel }) {
   return (
     <div className="rounded-lg bg-white p-6 shadow">
       <form onSubmit={save} className="space-y-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <div className="text-sm text-slate-500">
+            Bill No.{' '}
+            <span className="font-mono text-lg font-semibold text-slate-800">{billNo || '…'}</span>
+            <span className="ml-2 text-xs">(auto-generated; confirmed when saved)</span>
+          </div>
+        </div>
         <ErrorBox>{error}</ErrorBox>
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-5">
           <div className="sm:col-span-2">
             <Select
               label="Customer"
@@ -152,8 +187,9 @@ function NewInvoice({ onCancel }) {
               </button>
             )}
           </div>
-          <Field label="Date *" type="date" value={form.sale_date} onChange={set('sale_date')} required />
-          <Field label="GST %" type="number" min="0" max="100" value={form.tax_percent} onChange={set('tax_percent')} />
+          <Select label="Counter" value={form.counter_id} onChange={set('counter_id')} options={counters} placeholder="No counter" />
+          <Field label="Bill date *" type="date" value={form.sale_date} onChange={set('sale_date')} required />
+          <Field label="Bill time *" type="time" value={form.sale_time} onChange={set('sale_time')} required />
         </div>
         {addingCustomer && (
           <QuickCustomer
@@ -165,10 +201,10 @@ function NewInvoice({ onCancel }) {
             }}
           />
         )}
-        <ItemsEditor products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock />
+        <ItemsEditor products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock showPricing />
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <span className="block text-xs text-slate-600">Offer type</span>
+            <span className="block text-xs text-slate-600">Discount type</span>
             <div className="mt-1 inline-flex overflow-hidden rounded border border-slate-300 text-sm">
               {[['percent', '% Percentage'], ['amount', '₹ Amount']].map(([k, label]) => (
                 <button
@@ -183,7 +219,7 @@ function NewInvoice({ onCancel }) {
             </div>
           </div>
           <Field
-            label={isPercent ? 'Offer %' : 'Offer amount (₹)'}
+            label={isPercent ? 'Discount %' : 'Discount amount (₹)'}
             type="number"
             min="0"
             max={isPercent ? '100' : undefined}
@@ -192,23 +228,24 @@ function NewInvoice({ onCancel }) {
             onChange={set('discount_value')}
             placeholder="0"
           />
-          {offerError && <span className="pb-2 text-sm text-red-600">{offerError}</span>}
+          {discountError && <span className="pb-2 text-sm text-red-600">{discountError}</span>}
         </div>
         <TextArea label="Notes" value={form.notes} onChange={set('notes')} />
-        <div className="ml-auto w-72 space-y-1 border-t pt-3 text-sm">
-          <Row label="Subtotal" value={money(subtotal)} />
-          {discount > 0 && (
-            <>
-              <Row label={`Offer${isPercent ? ` (${offerValue}%)` : ''}`} value={`- ${money(discount)}`} />
-              <Row label="Taxable value" value={money(taxable)} />
-            </>
-          )}
-          <Row label={`GST (${Number(form.tax_percent) || 0}%)`} value={money(tax)} />
-          <Row label="Total" value={money(taxable + tax)} bold />
+        <div className="ml-auto w-80 space-y-1 border-t pt-3 text-sm">
+          <Row label="Subtotal (incl. GST)" value={money(bill.subtotal)} />
+          {bill.discount > 0 && <Row label={`Discount${isPercent ? ` (${discValue}%)` : ''}`} value={`- ${money(bill.discount)}`} />}
+          <div className="space-y-0.5 py-1 text-xs text-slate-500">
+            <Row label="Taxable value" value={money(bill.taxable)} />
+            <Row label="CGST" value={money(bill.cgst)} />
+            <Row label="SGST" value={money(bill.sgst)} />
+          </div>
+          {bill.roundOff !== 0 && <Row label="Round off" value={`${bill.roundOff > 0 ? '+' : '-'} ${money(Math.abs(bill.roundOff))}`} />}
+          <Row label="Net amount" value={money(bill.total)} bold />
+          {saved > 0.5 && <div className="text-right text-xs font-medium text-green-700">Customer saves {money(saved)} on MRP</div>}
         </div>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button disabled={saving}>{saving ? 'Saving...' : 'Save invoice'}</Button>
+          <Button disabled={saving}>{saving ? 'Saving...' : 'Save bill'}</Button>
         </div>
       </form>
     </div>

@@ -8,12 +8,11 @@ import { money, productLabel } from '../utils/format';
 // Sticker sizes. Thermal sizes print one sticker per page; A4 lays them out in a grid.
 const SIZES = {
   // 3" receipt printers (e.g. RETSOL RTP-81) with continuous sticker roll; the cutter cuts after each sticker.
-  roll80: { name: '80 mm roll – thermal receipt printer (RTP-81)', w: 80, h: 50, font: 10.5, bar: 13, pad: 4, sheet: false },
-  '50x25': { name: 'Sticker 50 × 25 mm', w: 50, h: 25, font: 6, bar: 6.5, pad: 1.5, sheet: false },
-  '75x50': { name: 'Sticker 75 × 50 mm', w: 75, h: 50, font: 10, bar: 12, pad: 3, sheet: false },
-  a4: { name: 'A4 sheet (3 × 7, 63.5 × 38 mm)', w: 63.5, h: 38, font: 7.5, bar: 9, pad: 2.5, sheet: true },
+  roll80: { name: '80 mm roll – thermal receipt printer (RTP-81)', w: 80, h: 50, font: 13, bar: 11, pad: 4, sheet: false },
+  '50x25': { name: 'Sticker 50 × 25 mm', w: 50, h: 25, font: 7.5, bar: 5.5, pad: 1.5, sheet: false },
+  '75x50': { name: 'Sticker 75 × 50 mm', w: 75, h: 50, font: 12.5, bar: 11, pad: 3, sheet: false },
+  a4: { name: 'A4 sheet (3 × 7, 63.5 × 38 mm)', w: 63.5, h: 38, font: 9.5, bar: 8, pad: 2.5, sheet: true },
 };
-const PIECE_UNITS = ['pc', 'pcs', 'piece', 'pieces'];
 
 // URL: /labels?items=12:5,14:1  (product id : number of stickers)
 const parseItems = (s) =>
@@ -27,7 +26,6 @@ export default function Labels() {
   const [size, setSize] = useState(() => {
     try { return SIZES[localStorage.getItem('labelSize')] ? localStorage.getItem('labelSize') : 'roll80'; } catch { return 'roll80'; }
   });
-  const [showPrice, setShowPrice] = useState(false);
 
   useEffect(() => {
     api.get('/products', { params: { all: 1 } }).then((r) => setProducts(r.data.data));
@@ -70,10 +68,6 @@ export default function Labels() {
               <select value={size} onChange={(e) => setSize(e.target.value)} className="mt-1 block rounded border border-slate-300 px-2 py-1.5 text-sm">
                 {Object.entries(SIZES).map(([k, v]) => <option key={k} value={k}>{v.name}</option>)}
               </select>
-            </label>
-            <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
-              <input type="checkbox" checked={showPrice} onChange={(e) => setShowPrice(e.target.checked)} />
-              Show price
             </label>
           </div>
 
@@ -120,48 +114,53 @@ export default function Labels() {
 
       <div className={s.sheet ? 'mx-auto flex max-w-[210mm] flex-wrap gap-[2mm] px-4 pb-8 print:max-w-none print:p-0' : 'flex flex-wrap justify-center gap-3 px-4 pb-8 print:block print:p-0'}>
         {stickers.map((p, i) => (
-          <Sticker key={i} p={p} s={s} showPrice={showPrice} first={i === 0} />
+          <Sticker key={i} p={p} s={s} first={i === 0} />
         ))}
       </div>
     </div>
   );
 }
 
-// Layout follows the shop's existing sticker: BRAND / IC / Size / D NO, then the barcode and its code.
-function Sticker({ p, s, showPrice, first }) {
-  const pieces = PIECE_UNITS.includes(String(p.unit || '').toLowerCase());
+// BRAND / MODEL / SIZE / PRICE in large bold type, then the barcode and its code.
+function Sticker({ p, s, first }) {
   const rows = [
-    ['BRAND', p.brand || p.name],
-    ['IC', [p.color, pieces && '1 PCS'].filter(Boolean).join('  ')],
-    ['Size', p.size],
-    ['D NO', p.lot_no, p.fabric_type],
+    ['BRAND', p.brand],
+    ['MODEL', p.model || p.name],
+    ['SIZE', p.size],
   ];
-  if (showPrice) rows.push(['MRP', money(p.selling_price)]);
+  const discounted = Number(p.mrp) > Number(p.selling_price);
 
   return (
     <div
       className="flex flex-col overflow-hidden bg-white text-black shadow print:shadow-none"
       style={{
-        width: `${s.w}mm`, height: `${s.h}mm`, padding: `${s.pad}mm`, fontSize: `${s.font}pt`, lineHeight: 1.15,
-        fontFamily: '"Times New Roman", Times, serif',
+        width: `${s.w}mm`, height: `${s.h}mm`, padding: `${s.pad}mm`, fontSize: `${s.font}pt`, lineHeight: 1.12,
+        fontFamily: 'Arial, Helvetica, sans-serif',
         breakBefore: s.sheet || first ? 'auto' : 'page', breakInside: 'avoid', boxSizing: 'border-box',
       }}
     >
       <table className="w-full border-collapse uppercase">
         <tbody>
-          {rows.map(([k, v, extra]) => (
+          {rows.map(([k, v]) => (
             <tr key={k}>
-              <td className="whitespace-nowrap pr-[2mm] align-top font-semibold" style={{ width: '32%' }}>{k}</td>
-              <td className="truncate font-semibold" style={{ maxWidth: 0 }}>
-                {v || ''}{extra && <span className="ml-[3mm]">{extra}</span>}
-              </td>
+              <td className="whitespace-nowrap pr-[1.5mm] align-top font-bold" style={{ width: '1%' }}>{k}</td>
+              <td className="pr-[1mm] align-top font-bold" style={{ width: '1%' }}>:</td>
+              <td className="truncate font-extrabold" style={{ maxWidth: 0 }}>{v || ''}</td>
             </tr>
           ))}
+          <tr>
+            <td className="whitespace-nowrap pr-[1.5mm] align-middle font-bold">PRICE</td>
+            <td className="pr-[1mm] align-middle font-bold">:</td>
+            <td className="whitespace-nowrap font-black" style={{ fontSize: '1.35em' }}>
+              {money(p.selling_price)}
+              {discounted && <span className="ml-[2mm] font-semibold line-through" style={{ fontSize: '0.6em' }}>{money(p.mrp)}</span>}
+            </td>
+          </tr>
         </tbody>
       </table>
       <div className="mt-auto">
-        <Barcode value={p.barcode || p.sku} style={{ width: '80%', height: `${s.bar}mm`, display: 'block' }} />
-        <div className="font-semibold tracking-wide">{p.barcode || p.sku}</div>
+        <Barcode value={p.barcode || p.sku} style={{ width: '85%', height: `${s.bar}mm`, display: 'block' }} />
+        <div className="font-bold tracking-wider" style={{ fontSize: '0.8em' }}>{p.barcode || p.sku}</div>
       </div>
     </div>
   );

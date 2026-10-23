@@ -15,8 +15,8 @@ class ProductController
         // ?all=1 returns a light list for purchase/sale item pickers
         if (!empty($_GET['all'])) {
             ok(db()->query(
-                'SELECT p.id, p.sku, p.barcode, p.name, p.brand, p.color, p.size, p.fabric_type, p.lot_no, p.stock_qty,
-                        p.purchase_price, p.selling_price, u.short_name AS unit
+                'SELECT p.id, p.sku, p.barcode, p.name, p.brand, p.model, p.color, p.size, p.fabric_type, p.lot_no, p.stock_qty,
+                        p.purchase_price, p.mrp, p.selling_price, p.gst_percent, u.short_name AS unit
                  FROM products p JOIN units u ON u.id = p.unit_id WHERE p.is_active = 1 ORDER BY p.name'
             )->fetchAll());
         }
@@ -29,8 +29,8 @@ class ProductController
         $where = 'p.is_active = 1';
         $params = [];
         if ($search !== '') {
-            $where .= ' AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.brand LIKE ? OR p.color LIKE ? OR p.lot_no LIKE ?)';
-            $params = array_fill(0, 6, "%$search%");
+            $where .= ' AND (p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.brand LIKE ? OR p.model LIKE ? OR p.color LIKE ? OR p.lot_no LIKE ?)';
+            $params = array_fill(0, 7, "%$search%");
         }
         if (!empty($_GET['category_id'])) {
             $where .= ' AND p.category_id = ?';
@@ -68,10 +68,10 @@ class ProductController
         $opening = round((float)($in['opening_stock'] ?? 0), 3);
         if ($opening < 0) fail('Opening stock cannot be negative', 422);
 
-        $sql = 'INSERT INTO products (sku, barcode, name, brand, category_id, unit_id, fabric_type, color, size, gsm, width_inch,
-                  lot_no, purchase_price, selling_price, min_stock)
-                VALUES (:sku, :barcode, :name, :brand, :category_id, :unit_id, :fabric_type, :color, :size, :gsm, :width_inch,
-                  :lot_no, :purchase_price, :selling_price, :min_stock)';
+        $sql = 'INSERT INTO products (sku, barcode, name, brand, model, category_id, unit_id, fabric_type, color, size, gsm, width_inch,
+                  lot_no, purchase_price, mrp, discount_type, discount_value, selling_price, gst_percent, min_stock)
+                VALUES (:sku, :barcode, :name, :brand, :model, :category_id, :unit_id, :fabric_type, :color, :size, :gsm, :width_inch,
+                  :lot_no, :purchase_price, :mrp, :discount_type, :discount_value, :selling_price, :gst_percent, :min_stock)';
         try {
             $id = tx(function (PDO $pdo) use ($sql, $d, $opening, $user) {
                 $pdo->prepare($sql)->execute($d);
@@ -91,9 +91,10 @@ class ProductController
     {
         $d = self::validated(input());
         $d['id'] = $id;
-        $sql = 'UPDATE products SET sku=:sku, barcode=:barcode, name=:name, brand=:brand, category_id=:category_id, unit_id=:unit_id,
+        $sql = 'UPDATE products SET sku=:sku, barcode=:barcode, name=:name, brand=:brand, model=:model, category_id=:category_id, unit_id=:unit_id,
                   fabric_type=:fabric_type, color=:color, size=:size, gsm=:gsm, width_inch=:width_inch, lot_no=:lot_no,
-                  purchase_price=:purchase_price, selling_price=:selling_price, min_stock=:min_stock
+                  purchase_price=:purchase_price, mrp=:mrp, discount_type=:discount_type, discount_value=:discount_value,
+                  selling_price=:selling_price, gst_percent=:gst_percent, min_stock=:min_stock
                 WHERE id=:id';
         try {
             db()->prepare($sql)->execute($d);
@@ -182,6 +183,16 @@ class ProductController
         $barcode = trim((string)($in['barcode'] ?? ''));
         // Code 128 covers printable ASCII; keep it scanner-friendly.
         if ($barcode !== '' && !preg_match('/^[A-Za-z0-9\-.\/]{1,50}$/', $barcode)) $errors['barcode'] = 'Barcode may use letters, digits, - . / only';
+        // Selling price = MRP - discount; it includes GST.
+        $mrp = round((float)($in['mrp'] ?? 0), 2);
+        $discountType = ($in['discount_type'] ?? 'percent') === 'amount' ? 'amount' : 'percent';
+        $discountValue = round((float)($in['discount_value'] ?? 0), 2);
+        $discount = $discountType === 'percent' ? round($mrp * $discountValue / 100, 2) : $discountValue;
+        $gst = round((float)($in['gst_percent'] ?? 0), 2);
+        if ($mrp < 0) $errors['mrp'] = 'MRP cannot be negative';
+        if ($discountValue < 0 || ($discountType === 'percent' && $discountValue > 100)) $errors['discount_value'] = 'Discount % must be between 0 and 100';
+        elseif ($discount > $mrp) $errors['discount_value'] = 'Discount cannot be more than the MRP';
+        if ($gst < 0 || $gst > 28) $errors['gst_percent'] = 'GST % must be between 0 and 28';
         if ($errors) fail(implode('. ', $errors), 422, $errors);
 
         $text = fn($k) => ($v = trim((string)($in[$k] ?? ''))) === '' ? null : $v;
@@ -191,6 +202,7 @@ class ProductController
             'barcode'        => $barcode === '' ? null : $barcode,
             'name'           => trim($in['name']),
             'brand'          => $text('brand'),
+            'model'          => $text('model'),
             'category_id'    => !empty($in['category_id']) ? (int)$in['category_id'] : null,
             'unit_id'        => (int)$in['unit_id'],
             'fabric_type'    => $in['fabric_type'] ?? null,
@@ -200,7 +212,11 @@ class ProductController
             'width_inch'     => isset($in['width_inch']) && $in['width_inch'] !== '' ? (float)$in['width_inch'] : null,
             'lot_no'         => $in['lot_no'] ?? null,
             'purchase_price' => (float)($in['purchase_price'] ?? 0),
-            'selling_price'  => (float)($in['selling_price'] ?? 0),
+            'mrp'            => $mrp,
+            'discount_type'  => $discountType,
+            'discount_value' => $discountValue,
+            'selling_price'  => round($mrp - $discount, 2),
+            'gst_percent'    => $gst,
             'min_stock'      => (float)($in['min_stock'] ?? 0),
         ];
     }

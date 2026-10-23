@@ -5,6 +5,13 @@ export const money = (n) =>
 
 export const qty = (n) => Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
+// "14:05:00" -> "2:05 PM"
+export const fmtTime = (t) => {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+};
+
 export const fmtDate = (d) =>
   d ? new Date(d.length === 10 ? `${d}T00:00:00` : d.replace(' ', 'T')).toLocaleDateString('en-IN') : '';
 
@@ -23,7 +30,7 @@ export const assetUrl = (path) => (path ? `${api.defaults.baseURL.replace(/\/api
 
 // Also used for search, so typing or scanning a barcode finds the product.
 export const productLabel = (p) =>
-  [`${p.sku} — ${p.name}`, [p.brand, p.color, p.size, p.lot_no].filter(Boolean).join(' / '), p.barcode]
+  [`${p.sku} — ${p.name}`, [p.brand, p.model, p.color, p.size, p.lot_no].filter(Boolean).join(' / '), p.barcode]
     .filter(Boolean).join('  ·  ');
 
 // columns: [{ key, label }]. Writes a UTF-8 CSV with BOM so Excel opens it with ₹ and accents intact.
