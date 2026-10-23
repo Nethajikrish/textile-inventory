@@ -17,7 +17,7 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !err.config.url.includes('/login')) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      window.location.href = `${import.meta.env.BASE_URL}login`;
     }
     return Promise.reject(err);
   }

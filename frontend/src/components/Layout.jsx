@@ -9,11 +9,11 @@ const MANAGE = ['Admin', 'Manager'];
 
 // roles: who sees the link (omit = everyone)
 const links = [
-  { to: '/', label: 'Dashboard' },
+  { to: '/dashboard', label: 'Dashboard' },
+  { to: '/sales', label: 'Sales' },
   { to: '/products', label: 'Products' },
   { to: '/stock', label: 'Stock', badge: 'low' },
   { to: '/purchases', label: 'Purchases' },
-  { to: '/sales', label: 'Sales' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/customers', label: 'Customers' },
   { to: '/masters', label: 'Categories & Units' },

@@ -40,7 +40,8 @@ export default function App() {
           </Protected>
         }
       >
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Navigate to="/sales" replace />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/products" element={<Products />} />
         <Route path="/stock" element={<Stock />} />
         <Route path="/purchases" element={<Purchases />} />

@@ -60,6 +60,23 @@ textile-inventory/
 4. **Company details**: sign in as Admin and open **Company Settings** to set the business name, address, phone, email and GSTIN. They appear in the sidebar, login screen, browser tab and on printed sales bills.
 5. Open http://localhost:5173 and sign in with `admin@textile.local` / `Admin@123`. Change this password after first login (header → Change password).
 
+## Deploy to another PC (XAMPP, no Node needed there)
+
+1. On the dev machine: `cd frontend && npm run build` → output in `frontend/dist/`.
+2. On the server PC, create `C:\xampp\htdocs\textile-inventory\` and copy in:
+   - the **contents** of `frontend/dist/` (`index.html`, `assets/`, `.htaccess`)
+   - `backend/` (with `uploads/`)
+   - `database/` (for the import only)
+
+   Don't copy `frontend/` source or `node_modules`.
+3. Start Apache + MySQL, import `database/schema.sql` in phpMyAdmin (or import a dump of your existing data).
+4. Edit `backend/config/config.php`: DB credentials and a new long random `jwt_secret`.
+5. In `C:\xampp\apache\conf\httpd.conf`, make sure `mod_rewrite` is enabled and `htdocs` has `AllowOverride All`.
+6. Give the server PC a fixed IP and allow **Apache HTTP Server** through Windows Firewall (Private networks, TCP 80).
+7. Other PCs open `http://<server-ip>/textile-inventory/`.
+
+**Updating:** rebuild and replace `index.html` + `assets/`. Copy `backend/` only if PHP changed — keep the server's `config.php` and `uploads/`. Run any new `database/migrations/*.sql`.
+
 ## API
 
 All responses: `{ success, message, data }`. Send `Authorization: Bearer <token>`. List endpoints take `page`, `per_page`, `search`; date filters take `from` / `to` as `YYYY-MM-DD`.
