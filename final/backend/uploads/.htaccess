@@ -1,8 +1,0 @@
-# Uploaded files are data, never code.
-Options -Indexes
-<IfModule php_module>
-    php_flag engine off
-</IfModule>
-<FilesMatch "\.(php|phtml|phar|pl|py|cgi|sh)$">
-    Require all denied
-</FilesMatch>
