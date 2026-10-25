@@ -30,7 +30,7 @@ export function Select({ label, className = '', ...props }) {
   );
 }
 
-export function SearchSelect({ options, value, onChange, placeholder = 'Select', getLabel = (o) => o.name, required, disabled, className = '' }) {
+export function SearchSelect({ options, value, onChange, placeholder = 'Select', getLabel = (o) => o.name, required, disabled, className = '', inputRef }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -95,6 +95,7 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Select',
   return (
     <div ref={boxRef} className={`relative ${className}`}>
       <input
+        ref={inputRef}
         value={open ? query : selected ? getLabel(selected) : ''}
         placeholder={selected ? getLabel(selected) : placeholder}
         onChange={(e) => { setQuery(e.target.value); setActive(0); setOpen(true); }}
