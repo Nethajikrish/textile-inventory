@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -117,6 +117,7 @@ function NewInvoice({ onCancel }) {
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [addingCustomer, setAddingCustomer] = useState(false);
+  const formRef = useRef(null);
 
   useEffect(() => {
     api.get('/customers', { params: { all: 1 } }).then((r) => setCustomers(r.data.data));
@@ -145,6 +146,18 @@ function NewInvoice({ onCancel }) {
     : bill.discount > bill.subtotal ? 'Discount cannot exceed the subtotal' : '';
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  // Ctrl+Enter or Ctrl+S saves the bill from anywhere on the page.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'Enter' || e.key.toLowerCase() === 's')) {
+        e.preventDefault();
+        if (!saving) formRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
   const save = async (e) => {
     e.preventDefault();
     if (discountError) return setError(discountError);
@@ -162,7 +175,7 @@ function NewInvoice({ onCancel }) {
 
   return (
     <div className="rounded-lg bg-white p-6 shadow">
-      <form onSubmit={save} className="space-y-4">
+      <form ref={formRef} onSubmit={save} className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <div className="text-sm text-slate-500">
             Bill No.{' '}
