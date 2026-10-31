@@ -196,31 +196,22 @@ class SaleController
         $time = trim((string)($in['sale_time'] ?? '')) ?: date('H:i:s');
         if (!valid_date($date)) fail('Enter a valid bill date', 422);
         if (!preg_match('/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/', $time)) fail('Enter a valid bill time', 422);
-        $discountType = ($in['discount_type'] ?? 'percent') === 'amount' ? 'amount' : 'percent';
-        $discountValue = round((float)($in['discount_value'] ?? 0), 2);
-        if ($discountValue < 0) fail('Discount cannot be negative', 422);
-        if ($discountType === 'percent' && $discountValue > 100) fail('Discount % must be between 0 and 100', 422);
-        $items = validated_items($in['items'] ?? null, true);
+        [$discountType, $discountValue] = validated_bill_discount($in);
+        $items = with_product_master(validated_items($in['items'] ?? null, true));
         $exchangeId = (int)($in['exchange_return_id'] ?? 0) ?: null;
-
-        // MRP and GST rate come from the product master, not the client.
-        $ids = array_values(array_unique(array_column($items, 'product_id')));
-        $s = db()->prepare('SELECT id, mrp, gst_percent FROM products WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
-        $s->execute($ids);
-        $master = [];
-        foreach ($s->fetchAll() as $p) $master[(int)$p['id']] = $p;
-        foreach ($items as &$it) {
-            $p = $master[$it['product_id']] ?? null;
-            if (!$p) fail('Unknown product', 422);
-            $it['gst_percent'] = (float)$p['gst_percent'];
-            $it['mrp'] = max((float)$p['mrp'], $it['rate']);
-        }
-        unset($it);
+        $quotationId = (int)($in['quotation_id'] ?? 0) ?: null;
 
         $bill = compute_bill($items, $discountType, $discountValue);
 
         try {
-            $result = tx(function (PDO $pdo) use ($in, $customerId, $counterId, $date, $time, $discountType, $discountValue, $bill, $user, $exchangeId) {
+            $result = tx(function (PDO $pdo) use ($in, $customerId, $counterId, $date, $time, $discountType, $discountValue, $bill, $user, $exchangeId, $quotationId) {
+                // Each quotation can become one bill only.
+                if ($quotationId) {
+                    $s = $pdo->prepare("SELECT id FROM quotations WHERE id = ? AND type = 'customer' AND status = 'open' FOR UPDATE");
+                    $s->execute([$quotationId]);
+                    if (!$s->fetchColumn()) throw new HttpError('This quotation is no longer open');
+                }
+
                 // Each exchange credit can be used on one bill only.
                 $credit = 0.0;
                 if ($exchangeId) {
@@ -240,6 +231,7 @@ class SaleController
                                $bill['round_off'], $bill['total'], $credit, trim($in['notes'] ?? '') ?: null, $user['id']]);
                 $id = (int)$pdo->lastInsertId();
                 if ($exchangeId) $pdo->prepare('UPDATE sale_returns SET exchange_sale_id = ? WHERE id = ?')->execute([$id, $exchangeId]);
+                if ($quotationId) $pdo->prepare("UPDATE quotations SET status = 'converted', converted_id = ? WHERE id = ?")->execute([$id, $quotationId]);
 
                 $ins = $pdo->prepare('INSERT INTO sale_items (sale_id, product_id, qty, mrp, rate, discount_type, discount_value, discount_amount,
                                         amount, gst_percent, taxable_amount, gst_amount)

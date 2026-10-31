@@ -9,7 +9,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
 require_once __DIR__ . '/../helpers/response.php';
 require_once __DIR__ . '/../middleware/auth.php';
-foreach (['Auth', 'Product', 'Master', 'Party', 'Purchase', 'Sale', 'Stock', 'Report', 'User', 'Settings'] as $c) {
+foreach (['Auth', 'Product', 'Master', 'Party', 'Purchase', 'Quotation', 'Sale', 'Stock', 'Report', 'User', 'Settings'] as $c) {
     require_once __DIR__ . "/../controllers/{$c}Controller.php";
 }
 
@@ -91,6 +91,16 @@ switch ($resource) {
         if ($method === 'POST' && !$id)                        PurchaseController::store($user);
         if ($method === 'POST' && $id && $action === 'receive') PurchaseController::receive($id, $user);
         if ($method === 'POST' && $id && $action === 'cancel')  PurchaseController::cancel($id);
+        fail('Method not allowed', 405);
+        break;
+
+    case 'quotations':
+        if ($method === 'GET') { $id ? QuotationController::show($id) : QuotationController::index(); }
+        // Who may write depends on the quotation's type; the controller checks it.
+        if ($method === 'POST' && !$id)                         QuotationController::store($user);
+        if ($method === 'PUT' && $id)                           QuotationController::update($id, $user);
+        if ($method === 'POST' && $id && $action === 'cancel')  QuotationController::cancel($id, $user);
+        if ($method === 'POST' && $id && $action === 'convert') QuotationController::convert($id, $user);
         fail('Method not allowed', 405);
         break;
 

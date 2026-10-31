@@ -40,7 +40,8 @@ export default function ItemsEditor({ products, items, onChange, priceField, che
 
   // Keyboard entry: the product search of the row to focus after a keyboard add or move.
   const productRefs = useRef([]);
-  const focusRow = useRef(autoNext ? 0 : null);
+  // Lines may arrive filled (from a quotation): start on the empty bottom line so a scan can't replace a product.
+  const focusRow = useRef(autoNext ? items.length - 1 : null);
   useEffect(() => {
     if (focusRow.current == null) return;
     productRefs.current[focusRow.current]?.focus();
@@ -177,7 +178,7 @@ export default function ItemsEditor({ products, items, onChange, priceField, che
         <button type="button" onClick={addAtEnd} className="text-sm text-indigo-600 hover:underline">
           + Add line
         </button>
-        {showPricing && <span className="text-xs text-slate-500">Scan: adds the product, qty 1, and moves to the next line · Alt+N: new line · Ctrl+Enter: save bill</span>}
+        {showPricing && <span className="text-xs text-slate-500">Scan: adds the product, qty 1, and moves to the next line · Alt+N: new line · Ctrl+Enter: save</span>}
       </div>
     </div>
   );

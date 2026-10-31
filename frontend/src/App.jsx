@@ -14,6 +14,8 @@ import Reports from './pages/Reports.jsx';
 import Users from './pages/Users.jsx';
 import Settings from './pages/Settings.jsx';
 import PurchasePrint from './pages/PurchasePrint.jsx';
+import Quotations from './pages/Quotations.jsx';
+import QuotationPrint from './pages/QuotationPrint.jsx';
 import Labels from './pages/Labels.jsx';
 
 const MANAGE = ['Admin', 'Manager'];
@@ -32,6 +34,7 @@ export default function App() {
       {/* Full-page invoice for printing, outside the sidebar layout */}
       <Route path="/sales/:id/print" element={<Protected><InvoicePrint /></Protected>} />
       <Route path="/purchases/:id/print" element={<Protected><PurchasePrint /></Protected>} />
+      <Route path="/quotations/:id/print" element={<Protected><QuotationPrint /></Protected>} />
       <Route path="/labels" element={<Protected><Labels /></Protected>} />
       <Route
         element={
@@ -46,6 +49,7 @@ export default function App() {
         <Route path="/stock" element={<Stock />} />
         <Route path="/purchases" element={<Purchases />} />
         <Route path="/sales" element={<Sales />} />
+        <Route path="/quotations" element={<Quotations />} />
         <Route path="/suppliers" element={<Parties key="suppliers" resource="suppliers" />} />
         <Route path="/customers" element={<Parties key="customers" resource="customers" />} />
         <Route path="/masters" element={<Masters />} />

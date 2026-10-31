@@ -182,6 +182,9 @@ const badgeTones = {
   received: 'bg-green-100 text-green-800',
   completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-slate-200 text-slate-600',
+  open: 'bg-amber-100 text-amber-800',
+  converted: 'bg-green-100 text-green-800',
+  expired: 'bg-red-100 text-red-700',
   low: 'bg-red-100 text-red-700',
 };
 export function Badge({ children, tone }) {

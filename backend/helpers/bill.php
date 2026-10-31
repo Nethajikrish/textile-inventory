@@ -1,5 +1,34 @@
 <?php
+require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/response.php';
+
+// The whole-bill discount from a sale or quotation form: [type, value].
+function validated_bill_discount(array $in): array
+{
+    $type = ($in['discount_type'] ?? 'percent') === 'amount' ? 'amount' : 'percent';
+    $value = round((float)($in['discount_value'] ?? 0), 2);
+    if ($value < 0) fail('Discount cannot be negative', 422);
+    if ($type === 'percent' && $value > 100) fail('Discount % must be between 0 and 100', 422);
+    return [$type, $value];
+}
+
+// MRP and GST rate come from the product master, not the client.
+function with_product_master(array $items): array
+{
+    $ids = array_values(array_unique(array_column($items, 'product_id')));
+    $s = db()->prepare('SELECT id, mrp, gst_percent FROM products WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+    $s->execute($ids);
+    $master = [];
+    foreach ($s->fetchAll() as $p) $master[(int)$p['id']] = $p;
+    foreach ($items as &$it) {
+        $p = $master[$it['product_id']] ?? null;
+        if (!$p) fail('Unknown product', 422);
+        $it['gst_percent'] = (float)$p['gst_percent'];
+        $it['mrp'] = max((float)$p['mrp'], $it['rate']);
+    }
+    unset($it);
+    return $items;
+}
 
 // Sales bill maths (frontend/src/utils/bill.js mirrors this for the live preview).
 // Prices include GST: the bill discount is shared across lines by value, then GST is backed out

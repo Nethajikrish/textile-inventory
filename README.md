@@ -10,6 +10,7 @@ React (Vite + Tailwind) frontend, Core PHP REST API, MySQL database.
 | Products | Fabric details (type, color, GSM, width, unit, lot/design no., prices), image upload, opening stock |
 | Categories, units, brands, counters | Master data CRUD; new products default to the Piece unit |
 | Suppliers & customers | Contact details with GSTIN validation |
+| Quotations | Customer quotations become a sales bill; supplier quotations become a purchase order. Print / save as PDF. Quotations never change stock |
 | Purchases | Purchase orders → receive goods (stock goes up) or cancel |
 | Sales | Invoices with GST (stock goes down, overselling blocked), barcode scan entry, discount per line, 80 mm receipt / A4 print, cancel (stock restored), refund or exchange within 7 days of the bill date |
 | Stock | Current stock grouped by product, color or lot; full stock ledger; damage / return / correction adjustments; low-stock alerts |
@@ -23,8 +24,8 @@ Every stock change goes through one function (`stock_move` in `backend/helpers/s
 | | Admin | Manager | Staff |
 |---|:-:|:-:|:-:|
 | View products, stock, purchases, sales, parties | ✓ | ✓ | ✓ |
-| Create invoices, add/edit customers | ✓ | ✓ | ✓ |
-| Products, purchases, adjustments, suppliers, masters, cancel invoices, sales returns | ✓ | ✓ | |
+| Create invoices and customer quotations, add/edit customers | ✓ | ✓ | ✓ |
+| Products, purchases, supplier quotations, adjustments, suppliers, masters, cancel invoices, sales returns | ✓ | ✓ | |
 | Reports | ✓ | ✓ | |
 | Users | ✓ | | |
 

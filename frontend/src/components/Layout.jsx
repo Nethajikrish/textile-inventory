@@ -11,6 +11,7 @@ const MANAGE = ['Admin', 'Manager'];
 const links = [
   { to: '/dashboard', label: 'Dashboard' },
   { to: '/sales', label: 'Sales' },
+  { to: '/quotations', label: 'Quotations' },
   { to: '/products', label: 'Products' },
   { to: '/stock', label: 'Stock', badge: 'low' },
   { to: '/purchases', label: 'Purchases' },

@@ -13,6 +13,15 @@ export function lineDiscount(l) {
 
 export const lineAmount = (l) => r2(r2((Number(l.qty) || 0) * (Number(l.rate) || 0)) - lineDiscount(l));
 
+// A saved quotation line as an ItemsEditor line.
+export const quoteLine = (it) => ({
+  product_id: String(it.product_id),
+  qty: String(Number(it.qty)),
+  rate: String(Number(it.rate)),
+  discount_type: it.discount_type,
+  discount_value: Number(it.discount_value) ? String(Number(it.discount_value)) : '',
+});
+
 // lines: [{ amount, gst_percent }]
 export function computeBill(lines, discountType, discountValue) {
   const subtotal = r2(lines.reduce((s, l) => s + l.amount, 0));

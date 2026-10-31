@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { Badge, Button, ErrorBox, Field, Modal, Pagination, Select, Table, Tabs, Td, TextArea } from '../components/ui.jsx';
 import ItemsEditor, { blankItem } from '../components/ItemsEditor.jsx';
 import { errMsg, fmtDate, fmtTime, money, qty, today } from '../utils/format';
-import { computeBill, lineAmount, lineDiscount } from '../utils/bill';
+import { computeBill, lineAmount, lineDiscount, quoteLine } from '../utils/bill';
 
 const STATUSES = [{ id: 'completed', name: 'Completed' }, { id: 'cancelled', name: 'Cancelled' }];
 const TABS = [{ key: 'new', label: 'New Invoice' }, { key: 'list', label: 'Sales List' }, { key: 'returns', label: 'Returns' }];
@@ -17,7 +17,7 @@ export default function Sales() {
   return (
     <div className="space-y-4">
       <Tabs tabs={TABS} value={tab} onChange={(t) => setParams({ tab: t })} />
-      {tab === 'new' && <NewInvoice key={params.get('exchange') || 'new'} exchangeId={params.get('exchange')} onCancel={() => setParams({ tab: 'list' })} />}
+      {tab === 'new' && <NewInvoice key={`${params.get('exchange')}-${params.get('quote')}`} exchangeId={params.get('exchange')} quoteId={params.get('quote')} onCancel={() => setParams({ tab: 'list' })} />}
       {tab === 'list' && <SalesList />}
       {tab === 'returns' && <ReturnsList />}
     </div>
@@ -275,9 +275,10 @@ const savedCounter = () => {
   try { return localStorage.getItem('counterId') || ''; } catch { return ''; }
 };
 
-function NewInvoice({ exchangeId, onCancel }) {
+function NewInvoice({ exchangeId, quoteId, onCancel }) {
   const navigate = useNavigate();
   const [credit, setCredit] = useState(null); // exchange return used on this bill
+  const [quote, setQuote] = useState(null); // customer quotation this bill is made from
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [counters, setCounters] = useState([]);
@@ -310,7 +311,24 @@ function NewInvoice({ exchangeId, onCancel }) {
         setForm((f) => ({ ...f, customer_id: ret.customer_id ? String(ret.customer_id) : '' }));
       }).catch(() => setError('Exchange credit not found'));
     }
-  }, [exchangeId]);
+    if (quoteId) {
+      api.get(`/quotations/${quoteId}`).then((r) => {
+        const q = r.data.data;
+        if (q.type !== 'customer' || q.status !== 'open') return setError(`Quotation ${q.quote_no} is no longer open`);
+        const gone = q.items.filter((it) => !Number(it.is_active));
+        if (gone.length) setError(`Left out, no longer in Products: ${gone.map((it) => it.name).join(', ')}`);
+        setQuote(q);
+        setForm((f) => ({
+          ...f,
+          customer_id: q.customer_id ? String(q.customer_id) : '',
+          discount_type: q.discount_type,
+          discount_value: Number(q.discount_value) ? String(Number(q.discount_value)) : '',
+          notes: q.notes || '',
+        }));
+        setLines([...q.items.filter((it) => Number(it.is_active)).map(quoteLine), blankItem()]);
+      }).catch(() => setError('Quotation not found'));
+    }
+  }, [exchangeId, quoteId]);
 
   const byId = Object.fromEntries(products.map((p) => [String(p.id), p]));
   const billLines = lines
@@ -349,7 +367,7 @@ function NewInvoice({ exchangeId, onCancel }) {
     setSaving(true);
     try {
       try { localStorage.setItem('counterId', form.counter_id); } catch { /* ignore */ }
-      const res = await api.post('/sales', { ...form, items: lines.filter((l) => l.product_id), exchange_return_id: credit?.id });
+      const res = await api.post('/sales', { ...form, items: lines.filter((l) => l.product_id), exchange_return_id: credit?.id, quotation_id: quote?.id });
       navigate(`/sales/${res.data.data.id}/print`);
     } catch (err) {
       setError(errMsg(err, 'Save failed'));
@@ -371,6 +389,11 @@ function NewInvoice({ exchangeId, onCancel }) {
         {credit && (
           <div className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
             Exchange: {money(creditAmount)} credit from {credit.return_no} (bill {credit.invoice_no}) is taken off this bill.
+          </div>
+        )}
+        {quote && (
+          <div className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+            From quotation {quote.quote_no}, at the quoted prices. Saving this bill closes the quotation and takes the items out of stock.
           </div>
         )}
         <div className="grid gap-3 sm:grid-cols-5">
@@ -403,7 +426,7 @@ function NewInvoice({ exchangeId, onCancel }) {
             }}
           />
         )}
-        <ItemsEditor products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock showPricing autoNext />
+        <ItemsEditor key={quote?.id ?? 'new'} products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock showPricing autoNext />
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <span className="block text-xs text-slate-600">Discount type</span>
@@ -462,7 +485,7 @@ function NewInvoice({ exchangeId, onCancel }) {
 
 // Minimal customer (name + phone) created without leaving the invoice.
 // Not a nested <form>, so Enter is handled here instead of submitting the invoice.
-function QuickCustomer({ onCancel, onCreated }) {
+export function QuickCustomer({ onCancel, onCreated }) {
   const [c, setC] = useState({ name: '', phone: '' });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);

@@ -213,7 +213,7 @@ export default function InvoicePrint() {
   );
 }
 
-function GstTable({ rows, small = false }) {
+export function GstTable({ rows, small = false }) {
   const total = rows.reduce((t, r) => ({ taxable: t.taxable + r.taxable, cgst: t.cgst + r.cgst, sgst: t.sgst + r.sgst }), { taxable: 0, cgst: 0, sgst: 0 });
   const cell = small ? 'py-0.5' : 'px-2 py-1';
   return (

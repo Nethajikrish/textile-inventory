@@ -75,20 +75,25 @@ class PurchaseController
 
     private static function create(array $in, ?int $supplierId, string $date, array $items, bool $receiveNow, array $user): array
     {
-        return tx(function (PDO $pdo) use ($in, $supplierId, $date, $items, $receiveNow, $user) {
-            $no = next_doc_no('purchases', 'purchase_no', 'PO');
-            $total = array_sum(array_column($items, 'amount'));
-            $pdo->prepare('INSERT INTO purchases (purchase_no, supplier_id, purchase_date, total_amount, notes, created_by)
-                           VALUES (?, ?, ?, ?, ?, ?)')
-                ->execute([$no, $supplierId, $date, $total, trim($in['notes'] ?? '') ?: null, $user['id']]);
-            $id = (int)$pdo->lastInsertId();
+        return tx(fn() => self::insert($in, $supplierId, $date, $items, $receiveNow, $user));
+    }
 
-            $ins = $pdo->prepare('INSERT INTO purchase_items (purchase_id, product_id, qty, rate, amount) VALUES (?, ?, ?, ?, ?)');
-            foreach ($items as $it) $ins->execute([$id, $it['product_id'], $it['qty'], $it['rate'], $it['amount']]);
+    // Must be called inside tx().
+    public static function insert(array $in, ?int $supplierId, string $date, array $items, bool $receiveNow, array $user): array
+    {
+        $pdo = db();
+        $no = next_doc_no('purchases', 'purchase_no', 'PO');
+        $total = array_sum(array_column($items, 'amount'));
+        $pdo->prepare('INSERT INTO purchases (purchase_no, supplier_id, purchase_date, total_amount, notes, created_by)
+                       VALUES (?, ?, ?, ?, ?, ?)')
+            ->execute([$no, $supplierId, $date, $total, trim($in['notes'] ?? '') ?: null, $user['id']]);
+        $id = (int)$pdo->lastInsertId();
 
-            if ($receiveNow) self::doReceive($id, $user);
-            return ['id' => $id, 'purchase_no' => $no];
-        });
+        $ins = $pdo->prepare('INSERT INTO purchase_items (purchase_id, product_id, qty, rate, amount) VALUES (?, ?, ?, ?, ?)');
+        foreach ($items as $it) $ins->execute([$id, $it['product_id'], $it['qty'], $it['rate'], $it['amount']]);
+
+        if ($receiveNow) self::doReceive($id, $user);
+        return ['id' => $id, 'purchase_no' => $no];
     }
 
     public static function receive(int $id, array $user): void
