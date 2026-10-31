@@ -4,7 +4,7 @@ require_once __DIR__ . '/response.php';
 // Sales bill maths (frontend/src/utils/bill.js mirrors this for the live preview).
 // Prices include GST: the bill discount is shared across lines by value, then GST is backed out
 // of each line at its product's rate and split equally into CGST and SGST. The total is rounded to the rupee.
-// $lines: [['amount' => qty × rate incl. GST, 'gst_percent' => 5, ...], ...]
+// $lines: [['amount' => qty × rate incl. GST, after the line's own discount, 'gst_percent' => 5, ...], ...]
 function compute_bill(array $lines, string $discountType, float $discountValue): array
 {
     $subtotal = round(array_sum(array_column($lines, 'amount')), 2);

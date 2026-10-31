@@ -8,10 +8,10 @@ React (Vite + Tailwind) frontend, Core PHP REST API, MySQL database.
 |---|---|
 | Auth & users | JWT login/logout, change password; Admin manages users and roles |
 | Products | Fabric details (type, color, GSM, width, unit, lot/design no., prices), image upload, opening stock |
-| Categories & units | Master data CRUD |
+| Categories, units, brands, counters | Master data CRUD; new products default to the Piece unit |
 | Suppliers & customers | Contact details with GSTIN validation |
 | Purchases | Purchase orders → receive goods (stock goes up) or cancel |
-| Sales | Invoices with GST (stock goes down, overselling blocked), print / save as PDF, cancel (stock restored) |
+| Sales | Invoices with GST (stock goes down, overselling blocked), barcode scan entry, discount per line, 80 mm receipt / A4 print, cancel (stock restored), refund or exchange within 7 days of the bill date |
 | Stock | Current stock grouped by product, color or lot; full stock ledger; damage / return / correction adjustments; low-stock alerts |
 | Dashboard | Stock value, low stock, month totals, 6-month sales vs purchases chart, recent purchases and sales |
 | Reports | Stock, purchases, sales, supplier-wise; date filters; CSV export that opens in Excel |
@@ -24,7 +24,7 @@ Every stock change goes through one function (`stock_move` in `backend/helpers/s
 |---|:-:|:-:|:-:|
 | View products, stock, purchases, sales, parties | ✓ | ✓ | ✓ |
 | Create invoices, add/edit customers | ✓ | ✓ | ✓ |
-| Products, purchases, adjustments, suppliers, masters, cancel invoices | ✓ | ✓ | |
+| Products, purchases, adjustments, suppliers, masters, cancel invoices, sales returns | ✓ | ✓ | |
 | Reports | ✓ | ✓ | |
 | Users | ✓ | | |
 
@@ -44,6 +44,28 @@ textile-inventory/
 │   └── uploads/products/    # product images (PHP execution disabled)
 └── frontend/src/            # pages, components, context, services, utils
 ```
+
+## Backup & restore
+
+A Windows scheduled task backs up the database every day at 9 PM to `E:\TextileBackups`. If the PC was off, it runs at the next login. MySQL is started for the backup if it isn't running, then stopped again. The last 30 backups are kept, plus the first of each month for 12 months.
+
+If a backup fails, `DATABASE BACKUP FAILED.txt` appears on the Desktop with the reason. Each run is logged in `E:\TextileBackups\backup.log`.
+
+```
+# Set up (or -Uninstall to remove). Add -CopyTo <folder> for a second copy.
+powershell -ExecutionPolicy Bypass -File scripts\install-backup-task.ps1
+
+# Back up now
+powershell -ExecutionPolicy Bypass -File scripts\backup-database.ps1 -Force
+
+# Check a backup: restores into a separate test database and compares row counts with live
+powershell -ExecutionPolicy Bypass -File scripts\restore-database.ps1 -ZipPath E:\TextileBackups\<file>.zip -DropTestDatabase
+
+# Replace the live data: asks you to type RESTORE and backs up the current data first
+powershell -ExecutionPolicy Bypass -File scripts\restore-database.ps1 -ZipPath E:\TextileBackups\<file>.zip -Live
+```
+
+Product images in `backend/uploads/products` are not included.
 
 ## Setup
 

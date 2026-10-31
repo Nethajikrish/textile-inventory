@@ -2,13 +2,14 @@
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../helpers/response.php';
 
-// Categories, units & billing counters master data, plus the dashboard summary.
+// Categories, units, brands & billing counters master data, plus the dashboard summary.
 class MasterController
 {
     // table => [columns, required columns]
     private const TABLES = [
         'categories' => [['name'], ['name']],
         'units'      => [['name', 'short_name'], ['name', 'short_name']],
+        'brands'     => [['name'], ['name']],
         'counters'   => [['name'], ['name']],
     ];
 
@@ -31,7 +32,10 @@ class MasterController
     {
         $d = self::validated($table, input());
         $set = implode(', ', array_map(fn($c) => "$c = ?", array_keys($d)));
+        // Products hold the brand by name, so a renamed brand is renamed on them too.
+        $oldBrand = $table === 'brands' ? self::brandName($id) : null;
         self::write("UPDATE $table SET $set WHERE id = ?", [...array_values($d), $id]);
+        if ($oldBrand !== null) db()->prepare('UPDATE products SET brand = ? WHERE brand = ?')->execute([$d['name'], $oldBrand]);
         ok(null, 'Updated');
     }
 
@@ -43,6 +47,11 @@ class MasterController
             $s->execute([$id]);
             if ($s->fetchColumn() > 0) fail('In use by products; reassign them first', 409);
         }
+        if ($table === 'brands') {
+            $s = db()->prepare('SELECT COUNT(*) FROM products WHERE brand = ? AND is_active = 1');
+            $s->execute([self::brandName($id)]);
+            if ($s->fetchColumn() > 0) fail('In use by products; reassign them first', 409);
+        }
         try {
             db()->prepare("DELETE FROM $table WHERE id = ?")->execute([$id]);
         } catch (PDOException $e) {
@@ -50,6 +59,13 @@ class MasterController
             throw $e;
         }
         ok(null, 'Deleted');
+    }
+
+    private static function brandName(int $id): string
+    {
+        $s = db()->prepare('SELECT name FROM brands WHERE id = ?');
+        $s->execute([$id]);
+        return (string)$s->fetchColumn();
     }
 
     private static function write(string $sql, array $params): void
@@ -91,6 +107,11 @@ class MasterController
                             WHERE status = 'completed' AND sale_date >= ? GROUP BY m");
         $s->execute([$since]);
         foreach ($s as $r) if (isset($months[$r['m']])) $months[$r['m']]['sales'] = (float)$r['t'];
+        // Sales are net of returns, counted in the month of the return.
+        $s = $pdo->prepare("SELECT DATE_FORMAT(return_date, '%Y-%m') m, SUM(amount) t FROM sale_returns
+                            WHERE return_date >= ? GROUP BY m");
+        $s->execute([$since]);
+        foreach ($s as $r) if (isset($months[$r['m']])) $months[$r['m']]['sales'] -= (float)$r['t'];
         $s = $pdo->prepare("SELECT DATE_FORMAT(purchase_date, '%Y-%m') m, SUM(total_amount) t FROM purchases
                             WHERE status = 'received' AND purchase_date >= ? GROUP BY m");
         $s->execute([$since]);
@@ -101,7 +122,9 @@ class MasterController
             'stock_value'     => (float)$one('SELECT COALESCE(SUM(stock_qty * purchase_price), 0) FROM products WHERE is_active = 1'),
             'low_stock_count' => (int)$one('SELECT COUNT(*) FROM products WHERE is_active = 1 AND stock_qty <= min_stock'),
             'month_sales'     => (float)$one("SELECT COALESCE(SUM(total_amount), 0) FROM sales
-                                              WHERE status = 'completed' AND sale_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')"),
+                                              WHERE status = 'completed' AND sale_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')")
+                                 - (float)$one("SELECT COALESCE(SUM(amount), 0) FROM sale_returns
+                                                WHERE return_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')"),
             'month_purchases' => (float)$one("SELECT COALESCE(SUM(total_amount), 0) FROM purchases
                                               WHERE status = 'received' AND purchase_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')"),
             'low_stock'       => $pdo->query(

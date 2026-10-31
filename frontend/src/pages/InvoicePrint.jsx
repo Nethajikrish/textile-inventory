@@ -27,10 +27,18 @@ function billFigures(sale) {
     roundOff: Number(sale.round_off),
     saved: inclusive ? productDiscount + discount : 0,
     gstRows,
+    lineDiscounts: sale.items.some((it) => Number(it.discount_amount) > 0),
+    credit: Number(sale.exchange_credit),
+    balance: Number(sale.total_amount) - Number(sale.exchange_credit),
   };
 }
 
 const signed = (n) => `${n > 0 ? '+' : '-'} ${money(Math.abs(n))}`;
+const lineDiscLabel = (it) => (it.discount_type === 'percent' ? `${Number(it.discount_value)}%` : money(it.discount_amount));
+
+// Printed on every bill that isn't cancelled.
+const returnPolicy = (sale) =>
+  `Return, refund or exchange only within ${sale.return_days} days of the bill date (until ${fmtDate(sale.return_until)}).`;
 
 // Printable bill. "Print / Save as PDF" uses the browser's print dialog.
 // ?copy=duplicate marks the print as a DUPLICATE (reprint for the customer).
@@ -42,7 +50,7 @@ export default function InvoicePrint() {
   const [error, setError] = useState('');
   const company = useCompany();
   const [format, setFormat] = useState(() => {
-    try { return localStorage.getItem('billFormat') === 'receipt' ? 'receipt' : 'a4'; } catch { return 'a4'; }
+    try { return localStorage.getItem('billFormat') === 'a4' ? 'a4' : 'receipt'; } catch { return 'receipt'; }
   });
   const pickFormat = (f) => {
     setFormat(f);
@@ -130,6 +138,7 @@ export default function InvoicePrint() {
               <th className="py-2 text-right">Qty</th>
               <th className="py-2 text-right">MRP</th>
               <th className="py-2 text-right">Price</th>
+              {f.lineDiscounts && <th className="py-2 text-right">Disc</th>}
               <th className="py-2 text-right">Amount</th>
             </tr>
           </thead>
@@ -146,6 +155,7 @@ export default function InvoicePrint() {
                 <td className="py-2 text-right align-top">{qty(it.qty)} {it.unit}</td>
                 <td className={`py-2 text-right align-top ${Number(it.mrp) > Number(it.rate) ? 'text-slate-400 line-through' : ''}`}>{money(it.mrp)}</td>
                 <td className="py-2 text-right align-top font-medium">{money(it.rate)}</td>
+                {f.lineDiscounts && <td className="py-2 text-right align-top">{Number(it.discount_amount) > 0 ? lineDiscLabel(it) : ''}</td>}
                 <td className="py-2 text-right align-top">{money(it.amount)}</td>
               </tr>
             ))}
@@ -179,9 +189,20 @@ export default function InvoicePrint() {
             )}
             {f.roundOff !== 0 && <Line label="Round off" value={signed(f.roundOff)} />}
             <Line label="Net amount" value={money(sale.total_amount)} bold />
+            {f.credit > 0 && (
+              <>
+                <Line label={`Exchange credit (${sale.exchange_return_no})`} value={`- ${money(f.credit)}`} />
+                <Line label={f.balance < 0 ? 'Refunded to customer' : 'Balance paid'} value={money(Math.abs(f.balance))} bold />
+              </>
+            )}
             {f.saved > 0.5 && <div className="pt-1 text-right text-sm font-semibold text-green-700">You saved {money(f.saved)}</div>}
+            {sale.returns.map((r) => (
+              <Line key={r.id} label={`${r.type === 'refund' ? 'Refunded' : 'Exchanged'} ${fmtDate(r.return_date)} (${r.return_no})`} value={money(r.amount)} />
+            ))}
           </div>
         </div>
+
+        {sale.status !== 'cancelled' && <div className="mt-6 text-xs text-slate-600">{returnPolicy(sale)}</div>}
 
         <div className="mt-16 flex justify-between text-xs text-slate-500">
           <span>Thank you for your business.</span>
@@ -270,7 +291,8 @@ function Receipt({ sale, company, f, duplicate }) {
           {Number(it.mrp) > Number(it.rate) && (
             <div className="text-[8pt]">MRP {money(it.mrp)} · Disc {money(Number(it.mrp) - Number(it.rate))}</div>
           )}
-          <R label={`${qty(it.qty)} ${it.unit} × ${money(it.rate)}`} value={money(it.amount)} />
+          <R label={`${qty(it.qty)} ${it.unit} × ${money(it.rate)}`} value={money(Number(it.amount) + Number(it.discount_amount))} />
+          {Number(it.discount_amount) > 0 && <R label={`Item disc (${lineDiscLabel(it)})`} value={`- ${money(it.discount_amount)}`} />}
         </div>
       ))}
       {hr}
@@ -285,12 +307,22 @@ function Receipt({ sale, company, f, duplicate }) {
       {f.roundOff !== 0 && <R label="Round off" value={signed(f.roundOff)} />}
       {hr}
       <R label="NET AMOUNT" value={money(sale.total_amount)} bold />
+      {f.credit > 0 && (
+        <>
+          <R label={`Exchange credit (${sale.exchange_return_no})`} value={`- ${money(f.credit)}`} />
+          <R label={f.balance < 0 ? 'REFUNDED' : 'BALANCE PAID'} value={money(Math.abs(f.balance))} bold />
+        </>
+      )}
       {hr}
       <GstTable rows={f.gstRows} small />
       {f.inclusive && <div className="text-[8pt]">Prices inclusive of GST</div>}
       {f.saved > 0.5 && <div className="mt-1 text-center font-bold">You saved {money(f.saved)}</div>}
       <div className="mt-1 text-[8pt]">{rupeesInWords(sale.total_amount)}</div>
       {sale.notes && <div className="mt-1 text-[8pt]">Note: {sale.notes}</div>}
+      {sale.returns.map((r) => (
+        <R key={r.id} label={`${r.type === 'refund' ? 'Refunded' : 'Exchanged'} ${fmtDate(r.return_date)} ${r.return_no}`} value={money(r.amount)} />
+      ))}
+      {sale.status !== 'cancelled' && <div className="mt-2 text-center text-[8pt] font-semibold">{returnPolicy(sale)}</div>}
       <div className="mt-2 text-center">Thank you! Visit again.</div>
     </div>
   );

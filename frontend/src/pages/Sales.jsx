@@ -2,29 +2,34 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext.jsx';
-import { Badge, Button, ErrorBox, Field, Pagination, Select, Table, Tabs, Td, TextArea } from '../components/ui.jsx';
+import { Badge, Button, ErrorBox, Field, Modal, Pagination, Select, Table, Tabs, Td, TextArea } from '../components/ui.jsx';
 import ItemsEditor, { blankItem } from '../components/ItemsEditor.jsx';
-import { errMsg, fmtDate, fmtTime, money, today } from '../utils/format';
-import { computeBill } from '../utils/bill';
+import { errMsg, fmtDate, fmtTime, money, qty, today } from '../utils/format';
+import { computeBill, lineAmount, lineDiscount } from '../utils/bill';
 
 const STATUSES = [{ id: 'completed', name: 'Completed' }, { id: 'cancelled', name: 'Cancelled' }];
-const TABS = [{ key: 'new', label: 'New Invoice' }, { key: 'list', label: 'Sales List' }];
+const TABS = [{ key: 'new', label: 'New Invoice' }, { key: 'list', label: 'Sales List' }, { key: 'returns', label: 'Returns' }];
 
 export default function Sales() {
   const [params, setParams] = useSearchParams();
-  const tab = params.get('tab') === 'list' ? 'list' : 'new';
+  const tab = TABS.some((t) => t.key === params.get('tab')) ? params.get('tab') : 'new';
 
   return (
     <div className="space-y-4">
       <Tabs tabs={TABS} value={tab} onChange={(t) => setParams({ tab: t })} />
-      {tab === 'new' ? <NewInvoice onCancel={() => setParams({ tab: 'list' })} /> : <SalesList />}
+      {tab === 'new' && <NewInvoice key={params.get('exchange') || 'new'} exchangeId={params.get('exchange')} onCancel={() => setParams({ tab: 'list' })} />}
+      {tab === 'list' && <SalesList />}
+      {tab === 'returns' && <ReturnsList />}
     </div>
   );
 }
 
 function SalesList() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const canCancel = ['Admin', 'Manager'].includes(user.role);
+  const [returning, setReturning] = useState(null); // sale id
+  const [notice, setNotice] = useState('');
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -69,6 +74,7 @@ function SalesList() {
       </div>
 
       <ErrorBox>{error}</ErrorBox>
+      {notice && <div className="rounded bg-green-50 px-3 py-2 text-sm text-green-800">{notice}</div>}
 
       <Table columns={[{ label: 'Bill no.' }, { label: 'Date & time' }, { label: 'Counter' }, { label: 'Customer' }, { label: 'Status' }, { label: 'Amount', className: 'text-right' }, { label: '' }]} empty="No invoices found">
         {items.map((s) => (
@@ -78,10 +84,16 @@ function SalesList() {
             <Td>{s.counter}</Td>
             <Td>{s.customer}</Td>
             <Td><Badge>{s.status}</Badge></Td>
-            <Td className="text-right">{money(s.total_amount)}</Td>
+            <Td className="text-right">
+              {money(s.total_amount)}
+              {Number(s.returned_amount) > 0 && <div className="text-xs text-red-600">Returned {money(s.returned_amount)}</div>}
+            </Td>
             <Td className="space-x-3 whitespace-nowrap text-right">
               <Link to={`/sales/${s.id}/print`} className="text-indigo-600 hover:underline">View / Print</Link>
               <Link to={`/sales/${s.id}/print?copy=duplicate`} className="text-slate-600 hover:underline">Duplicate bill</Link>
+              {canCancel && s.returnable && (
+                <button onClick={() => { setNotice(''); setReturning(s.id); }} className="text-amber-700 hover:underline">Return</button>
+              )}
               {canCancel && s.status === 'completed' && (
                 <button onClick={() => cancel(s)} className="text-red-600 hover:underline">Cancel</button>
               )}
@@ -91,6 +103,166 @@ function SalesList() {
       </Table>
 
       <Pagination page={page} perPage={perPage} total={total} onChange={setPage} noun="invoices" />
+
+      {returning && (
+        <ReturnModal
+          saleId={returning}
+          onClose={() => setReturning(null)}
+          onSaved={(r) => {
+            setReturning(null);
+            if (r.type === 'exchange') return navigate(`/sales?tab=new&exchange=${r.id}`);
+            setNotice(`Return ${r.return_no} saved. Refund ${money(r.amount)} to the customer. Stock added back.`);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Take goods back against a bill, for a refund or as credit towards an exchange.
+function ReturnModal({ saleId, onClose, onSaved }) {
+  const [sale, setSale] = useState(null);
+  const [qtys, setQtys] = useState({}); // sale item id -> qty being returned
+  const [type, setType] = useState('refund');
+  const [notes, setNotes] = useState('');
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get(`/sales/${saleId}`).then((r) => setSale(r.data.data)).catch(() => setError('Invoice not found'));
+  }, [saleId]);
+
+  const value = (sale?.items || []).reduce(
+    (sum, it) => sum + ((Number(qtys[it.id]) || 0) / Number(it.qty)) * (Number(it.taxable_amount) + Number(it.gst_amount)),
+    0,
+  );
+
+  const save = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      const items = Object.entries(qtys).map(([id, q]) => ({ sale_item_id: id, qty: q }));
+      const res = await api.post(`/sales/${saleId}/returns`, { type, items, notes });
+      onSaved(res.data.data);
+    } catch (err) {
+      setError(errMsg(err, 'Could not save the return'));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={sale ? `Return against ${sale.invoice_no}` : 'Return'} onClose={onClose}>
+      <ErrorBox>{error}</ErrorBox>
+      {sale && (
+        <form onSubmit={save} className="space-y-4">
+          <p className="text-sm text-slate-500">
+            Bill date {fmtDate(sale.sale_date)}. Returns accepted until {fmtDate(sale.return_until)} ({sale.return_days} days).
+          </p>
+          <table className="min-w-full text-sm">
+            <thead className="text-left text-xs uppercase text-slate-500">
+              <tr>
+                <th className="py-2 pr-2">Product</th>
+                <th className="py-2 pr-2 text-right">Sold</th>
+                <th className="py-2 pr-2 text-right">Can return</th>
+                <th className="w-28 py-2">Return qty</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sale.items.map((it) => {
+                const left = Number(it.qty) - Number(it.returned_qty);
+                return (
+                  <tr key={it.id} className="border-t">
+                    <td className="py-1.5 pr-2">{it.name}{it.size ? ` (${it.size})` : ''}</td>
+                    <td className="py-1.5 pr-2 text-right">{qty(it.qty)} {it.unit}</td>
+                    <td className="py-1.5 pr-2 text-right">{qty(left)}</td>
+                    <td className="py-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max={left}
+                        step="any"
+                        disabled={left <= 0}
+                        value={qtys[it.id] ?? ''}
+                        onChange={(e) => setQtys({ ...qtys, [it.id]: e.target.value })}
+                        aria-label={`Return quantity for ${it.name}`}
+                        className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm disabled:bg-slate-100"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="inline-flex overflow-hidden rounded border border-slate-300 text-sm">
+              {[['refund', 'Refund'], ['exchange', 'Exchange']].map(([k, label]) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setType(k)}
+                  className={`px-3 py-1.5 ${type === k ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="text-sm font-semibold">{type === 'refund' ? 'Refund' : 'Exchange credit'}: about {money(Math.round(value))}</div>
+          </div>
+          {type === 'exchange' && <p className="text-xs text-slate-500">A new bill opens next, with this credit taken off the amount to pay.</p>}
+          <TextArea label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button disabled={saving || value <= 0}>{saving ? 'Saving...' : 'Save return'}</Button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+function ReturnsList() {
+  const [items, setItems] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
+  const perPage = 10;
+
+  useEffect(() => {
+    api
+      .get('/returns', { params: { page, per_page: perPage, search } })
+      .then((res) => {
+        setItems(res.data.data.items);
+        setTotal(res.data.data.total);
+      })
+      .catch(() => setError('Failed to load returns'));
+  }, [page, search]);
+
+  return (
+    <div className="space-y-4">
+      <input value={search} onChange={(e) => { setPage(1); setSearch(e.target.value); }} placeholder="Search return no., bill no. or customer..." className="w-80 rounded border border-slate-300 px-3 py-2 text-sm" />
+      <ErrorBox>{error}</ErrorBox>
+      <Table columns={[{ label: 'Return no.' }, { label: 'Date' }, { label: 'Against bill' }, { label: 'Customer' }, { label: 'Type' }, { label: 'Qty', className: 'text-right' }, { label: 'Amount', className: 'text-right' }, { label: '' }]} empty="No returns found">
+        {items.map((r) => (
+          <tr key={r.id} className="border-t">
+            <Td className="font-mono">{r.return_no}</Td>
+            <Td>{fmtDate(r.return_date)}</Td>
+            <Td className="font-mono"><Link to={`/sales/${r.sale_id}/print`} className="text-indigo-600 hover:underline">{r.invoice_no}</Link></Td>
+            <Td>{r.customer}</Td>
+            <Td><Badge>{r.type}</Badge></Td>
+            <Td className="text-right">{qty(r.qty)}</Td>
+            <Td className="text-right">{money(r.amount)}</Td>
+            <Td className="whitespace-nowrap text-right">
+              {r.type === 'exchange' && (r.exchange_sale_id
+                ? <Link to={`/sales/${r.exchange_sale_id}/print`} className="text-slate-600 hover:underline">Used on {r.exchange_invoice_no}</Link>
+                : <Link to={`/sales?tab=new&exchange=${r.id}`} className="text-indigo-600 hover:underline">Use on new bill</Link>)}
+            </Td>
+          </tr>
+        ))}
+      </Table>
+      <Pagination page={page} perPage={perPage} total={total} onChange={setPage} noun="returns" />
     </div>
   );
 }
@@ -103,8 +275,9 @@ const savedCounter = () => {
   try { return localStorage.getItem('counterId') || ''; } catch { return ''; }
 };
 
-function NewInvoice({ onCancel }) {
+function NewInvoice({ exchangeId, onCancel }) {
   const navigate = useNavigate();
+  const [credit, setCredit] = useState(null); // exchange return used on this bill
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
   const [counters, setCounters] = useState([]);
@@ -129,13 +302,23 @@ function NewInvoice({ onCancel }) {
       // Keep the counter this computer used last; otherwise the first one.
       setForm((f) => (list.some((c) => String(c.id) === f.counter_id) ? f : { ...f, counter_id: list[0] ? String(list[0].id) : '' }));
     });
-  }, []);
+    if (exchangeId) {
+      api.get(`/returns/${exchangeId}`).then((r) => {
+        const ret = r.data.data;
+        if (ret.type !== 'exchange' || ret.exchange_sale_id) return setError(`Exchange credit ${ret.return_no} is not available`);
+        setCredit(ret);
+        setForm((f) => ({ ...f, customer_id: ret.customer_id ? String(ret.customer_id) : '' }));
+      }).catch(() => setError('Exchange credit not found'));
+    }
+  }, [exchangeId]);
 
   const byId = Object.fromEntries(products.map((p) => [String(p.id), p]));
   const billLines = lines
     .filter((l) => byId[l.product_id])
-    .map((l) => ({ amount: (Number(l.qty) || 0) * (Number(l.rate) || 0), gst_percent: byId[l.product_id].gst_percent }));
+    .map((l) => ({ amount: lineAmount(l), gst_percent: byId[l.product_id].gst_percent }));
   const bill = computeBill(billLines, form.discount_type, form.discount_value);
+  const creditAmount = Number(credit?.amount) || 0;
+  const balance = bill.total - creditAmount;
   const mrpTotal = lines.reduce((sum, l) => sum + (Number(l.qty) || 0) * Math.max(Number(byId[l.product_id]?.mrp) || 0, Number(l.rate) || 0), 0);
   const saved = mrpTotal - bill.total;
 
@@ -143,8 +326,9 @@ function NewInvoice({ onCancel }) {
   const isPercent = form.discount_type === 'percent';
   const discountError = discValue < 0 ? 'Discount cannot be negative'
     : isPercent && discValue > 100 ? 'Discount % must be between 0 and 100'
-    : bill.discount > bill.subtotal ? 'Discount cannot exceed the subtotal' : '';
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+    : bill.discount > bill.subtotal ? 'Discount cannot exceed the subtotal'
+    : lines.some((l) => lineDiscount(l) < 0 || lineAmount(l) < 0) ? 'An item discount cannot be negative or exceed the line amount' : '';
+  const set =(k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   // Ctrl+Enter or Ctrl+S saves the bill from anywhere on the page.
   useEffect(() => {
@@ -165,7 +349,7 @@ function NewInvoice({ onCancel }) {
     setSaving(true);
     try {
       try { localStorage.setItem('counterId', form.counter_id); } catch { /* ignore */ }
-      const res = await api.post('/sales', { ...form, items: lines });
+      const res = await api.post('/sales', { ...form, items: lines.filter((l) => l.product_id), exchange_return_id: credit?.id });
       navigate(`/sales/${res.data.data.id}/print`);
     } catch (err) {
       setError(errMsg(err, 'Save failed'));
@@ -184,6 +368,11 @@ function NewInvoice({ onCancel }) {
           </div>
         </div>
         <ErrorBox>{error}</ErrorBox>
+        {credit && (
+          <div className="rounded bg-indigo-50 px-3 py-2 text-sm text-indigo-800">
+            Exchange: {money(creditAmount)} credit from {credit.return_no} (bill {credit.invoice_no}) is taken off this bill.
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-5">
           <div className="sm:col-span-2">
             <Select
@@ -214,7 +403,7 @@ function NewInvoice({ onCancel }) {
             }}
           />
         )}
-        <ItemsEditor products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock showPricing />
+        <ItemsEditor products={products} items={lines} onChange={setLines} priceField="selling_price" checkStock showPricing autoNext />
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <span className="block text-xs text-slate-600">Discount type</span>
@@ -254,6 +443,12 @@ function NewInvoice({ onCancel }) {
           </div>
           {bill.roundOff !== 0 && <Row label="Round off" value={`${bill.roundOff > 0 ? '+' : '-'} ${money(Math.abs(bill.roundOff))}`} />}
           <Row label="Net amount" value={money(bill.total)} bold />
+          {credit && (
+            <>
+              <Row label="Exchange credit" value={`- ${money(creditAmount)}`} />
+              <Row label={balance < 0 ? 'Refund to customer' : 'Balance to pay'} value={money(Math.abs(balance))} bold />
+            </>
+          )}
           {saved > 0.5 && <div className="text-right text-xs font-medium text-green-700">Customer saves {money(saved)} on MRP</div>}
         </div>
         <div className="flex justify-end gap-2">

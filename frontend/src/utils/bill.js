@@ -4,6 +4,15 @@
 
 const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 
+// A line's own discount: % of qty × rate, or a ₹ amount off the line.
+export function lineDiscount(l) {
+  const gross = r2((Number(l.qty) || 0) * (Number(l.rate) || 0));
+  const v = Number(l.discount_value) || 0;
+  return r2(l.discount_type === 'amount' ? v : (gross * v) / 100);
+}
+
+export const lineAmount = (l) => r2(r2((Number(l.qty) || 0) * (Number(l.rate) || 0)) - lineDiscount(l));
+
 // lines: [{ amount, gst_percent }]
 export function computeBill(lines, discountType, discountValue) {
   const subtotal = r2(lines.reduce((s, l) => s + l.amount, 0));

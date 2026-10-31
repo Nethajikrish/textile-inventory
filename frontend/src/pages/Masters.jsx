@@ -13,6 +13,7 @@ export default function Masters() {
         resource="units"
         fields={[{ key: 'name', label: 'Name' }, { key: 'short_name', label: 'Short name' }]}
       />
+      <MasterList title="Brands" resource="brands" fields={[{ key: 'name', label: 'Brand name' }]} />
       <MasterList title="Billing counters" resource="counters" fields={[{ key: 'name', label: 'Counter name' }]} />
     </div>
   );

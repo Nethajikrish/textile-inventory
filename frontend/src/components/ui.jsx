@@ -30,7 +30,9 @@ export function Select({ label, className = '', ...props }) {
   );
 }
 
-export function SearchSelect({ options, value, onChange, placeholder = 'Select', getLabel = (o) => o.name, required, disabled, className = '', inputRef }) {
+// exactMatch(option, text): Enter picks the option this matches exactly (barcode scans), ahead of the highlighted one.
+// onNoMatch(text): Enter was pressed on text nothing matches; the text is cleared so the next scan starts fresh.
+export function SearchSelect({ options, value, onChange, placeholder = 'Select', getLabel = (o) => o.name, required, disabled, className = '', inputRef, exactMatch, onNoMatch }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
@@ -83,9 +85,14 @@ export function SearchSelect({ options, value, onChange, placeholder = 'Select',
       const step = e.key === 'ArrowDown' ? 1 : -1;
       setActive((a) => Math.min(Math.max(a + step, 0), list.length - 1));
     } else if (e.key === 'Enter') {
-      if (!open) return;
       e.preventDefault(); // pick the option instead of submitting the form
-      if (list[active]) choose(list[active].id);
+      if (!open) return;
+      const text = query.trim();
+      const exact = text && exactMatch ? options.find((o) => exactMatch(o, text)) : null;
+      if (exact) choose(String(exact.id));
+      else if (exactMatch && !text && active === 0) setOpen(false); // nothing typed: keep the current product
+      else if (list[active]) choose(list[active].id);
+      else if (text) { setQuery(''); onNoMatch?.(text); }
     } else if (e.key === 'Escape' || e.key === 'Tab') {
       setOpen(false);
       setQuery('');

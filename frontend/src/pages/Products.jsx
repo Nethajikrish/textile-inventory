@@ -28,6 +28,7 @@ export default function Products() {
   const [lowOnly, setLowOnly] = useState(params.get('low') === '1');
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
+  const [brands, setBrands] = useState([]);
   const [form, setForm] = useState(null); // null = modal closed
   const [editing, setEditing] = useState(null); // product being edited
   const [imageFile, setImageFile] = useState(null);
@@ -51,11 +52,14 @@ export default function Products() {
   useEffect(() => {
     api.get('/categories').then((r) => setCategories(r.data.data));
     api.get('/units').then((r) => setUnits(r.data.data));
+    api.get('/brands').then((r) => setBrands(r.data.data.map((b) => ({ id: b.name, name: b.name }))));
   }, []);
 
   const openNew = () => {
     setEditing(null);
-    setForm(emptyForm);
+    // New products start as Piece; the Unit field can still be changed.
+    const piece = units.find((u) => /^(piece|pieces|pc|pcs)$/i.test(u.name) || /^(pc|pcs)$/i.test(u.short_name));
+    setForm({ ...emptyForm, unit_id: piece ? String(piece.id) : '' });
     setImageFile(null);
     setError('');
   };
@@ -196,7 +200,7 @@ export default function Products() {
               <Field label="SKU *" value={form.sku} onChange={set('sku')} required />
               <Field label="Name *" value={form.name} onChange={set('name')} required />
               <Field label="Barcode" value={form.barcode} onChange={set('barcode')} placeholder="Auto-generated if blank" />
-              <Field label="Brand" value={form.brand} onChange={set('brand')} />
+              <Select label="Brand" value={form.brand} onChange={set('brand')} options={brands} placeholder="No brand" />
               <Field label="Model" value={form.model} onChange={set('model')} />
               <Select label="Category" value={form.category_id} onChange={set('category_id')} options={categories} />
               <Select label="Unit *" value={form.unit_id} onChange={set('unit_id')} options={units} required />

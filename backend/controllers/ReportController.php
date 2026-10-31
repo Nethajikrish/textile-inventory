@@ -56,10 +56,36 @@ class ReportController
 
         $s = db()->prepare(
             "SELECT s.invoice_no, s.sale_date, COALESCE(c.name, 'Walk-in customer') AS customer, c.gstin,
+                    (SELECT COALESCE(SUM(i.discount_amount), 0) FROM sale_items i WHERE i.sale_id = s.id) AS item_discount,
                     s.subtotal, s.discount_amount, s.taxable_amount AS taxable_value,
-                    s.cgst_amount, s.sgst_amount, s.round_off, s.total_amount
+                    s.cgst_amount, s.sgst_amount, s.round_off, s.total_amount,
+                    (SELECT COALESCE(SUM(r.amount), 0) FROM sale_returns r WHERE r.sale_id = s.id) AS returned_amount
              FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
              WHERE $where ORDER BY s.sale_date, s.id"
+        );
+        $s->execute($params);
+        ok($s->fetchAll());
+    }
+
+    // GET /reports/returns?from=&to=&customer_id=  (by return date)
+    public static function returns(): void
+    {
+        [$where, $params] = self::dateWhere('r.return_date');
+        if (!empty($_GET['customer_id'])) { $where .= ' AND s.customer_id = ?'; $params[] = (int)$_GET['customer_id']; }
+
+        $s = db()->prepare(
+            "SELECT r.return_no, r.return_date, s.invoice_no, COALESCE(c.name, 'Walk-in customer') AS customer, c.gstin, r.type,
+                    SUM(ri.qty) AS qty, SUM(ri.taxable_amount) AS taxable_value,
+                    ROUND(SUM(ri.gst_amount) / 2, 2) AS cgst_amount,
+                    SUM(ri.gst_amount) - ROUND(SUM(ri.gst_amount) / 2, 2) AS sgst_amount,
+                    r.amount
+             FROM sale_returns r
+             JOIN sale_return_items ri ON ri.return_id = r.id
+             JOIN sales s ON s.id = r.sale_id
+             LEFT JOIN customers c ON c.id = s.customer_id
+             WHERE $where
+             GROUP BY r.id, r.return_no, r.return_date, s.invoice_no, c.name, c.gstin, r.type, r.amount
+             ORDER BY r.return_date, r.id"
         );
         $s->execute($params);
         ok($s->fetchAll());

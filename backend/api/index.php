@@ -51,6 +51,7 @@ switch ($resource) {
 
     case 'categories':
     case 'units':
+    case 'brands':
     case 'counters':
         if ($method === 'GET') MasterController::index($resource);
         $allow($canWrite);
@@ -99,7 +100,13 @@ switch ($resource) {
         if ($method === 'POST' && !$id) SaleController::store($user); // any role can invoice
         $allow($canWrite);
         if ($method === 'POST' && $id && $action === 'cancel') SaleController::cancel($id, $user);
+        if ($method === 'POST' && $id && $action === 'returns') SaleController::createReturn($id, $user);
         fail('Method not allowed', 405);
+        break;
+
+    case 'returns':
+        if ($method !== 'GET') fail('Method not allowed', 405);
+        $id ? SaleController::showReturn($id) : SaleController::returns();
         break;
 
     case 'stock':
@@ -117,6 +124,7 @@ switch ($resource) {
         if ($action === 'stock')         ReportController::stock();
         if ($action === 'purchases')     ReportController::purchases();
         if ($action === 'sales')         ReportController::sales();
+        if ($action === 'returns')       ReportController::returns();
         if ($action === 'supplier-wise') ReportController::supplierWise();
         fail('Route not found', 404);
         break;

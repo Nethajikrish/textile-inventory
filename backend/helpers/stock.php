@@ -52,7 +52,8 @@ function next_doc_no(string $table, string $column, string $prefix): string
 }
 
 // Validates purchase/sale line items: [{product_id, qty, rate}] -> rows with amount.
-function validated_items($items): array
+// $lineDiscount (sales): also takes discount_type + discount_value; amount is after that discount.
+function validated_items($items, bool $lineDiscount = false): array
 {
     if (!is_array($items) || !$items) throw new HttpError('Add at least one item');
     $rows = [];
@@ -64,7 +65,18 @@ function validated_items($items): array
         if ($pid <= 0) throw new HttpError("Line $line: select a product");
         if ($qty <= 0) throw new HttpError("Line $line: quantity must be greater than 0");
         if ($rate < 0) throw new HttpError("Line $line: rate cannot be negative");
-        $rows[] = ['product_id' => $pid, 'qty' => $qty, 'rate' => $rate, 'amount' => round($qty * $rate, 2)];
+        $row = ['product_id' => $pid, 'qty' => $qty, 'rate' => $rate, 'amount' => round($qty * $rate, 2)];
+        if ($lineDiscount) {
+            $type = ($it['discount_type'] ?? 'percent') === 'amount' ? 'amount' : 'percent';
+            $value = round((float)($it['discount_value'] ?? 0), 2);
+            if ($value < 0) throw new HttpError("Line $line: discount cannot be negative");
+            if ($type === 'percent' && $value > 100) throw new HttpError("Line $line: discount % must be between 0 and 100");
+            $discount = $type === 'percent' ? round($row['amount'] * $value / 100, 2) : $value;
+            if ($discount > $row['amount']) throw new HttpError("Line $line: discount cannot exceed the line amount");
+            $row += ['discount_type' => $type, 'discount_value' => $value, 'discount_amount' => $discount];
+            $row['amount'] = round($row['amount'] - $discount, 2);
+        }
+        $rows[] = $row;
     }
     return $rows;
 }
