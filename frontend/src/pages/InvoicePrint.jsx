@@ -37,8 +37,11 @@ const signed = (n) => `${n > 0 ? '+' : '-'} ${money(Math.abs(n))}`;
 const lineDiscLabel = (it) => (it.discount_type === 'percent' ? `${Number(it.discount_value)}%` : money(it.discount_amount));
 
 // Printed on every bill that isn't cancelled.
-const returnPolicy = (sale) =>
-  `Return, refund or exchange only within ${sale.return_days} days of the bill date (until ${fmtDate(sale.return_until)}).`;
+const returnPolicy = (sale) => [
+  'No Refund',
+  'No Return',
+  `Only Exchange within ${sale.return_days} days of the bill date (until ${fmtDate(sale.return_until)})`,
+].map((line) => <div key={line}>{line}</div>);
 
 // Printable bill. "Print / Save as PDF" uses the browser's print dialog.
 // ?copy=duplicate marks the print as a DUPLICATE (reprint for the customer).
