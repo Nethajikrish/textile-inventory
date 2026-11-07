@@ -10,7 +10,7 @@ param(
     [string]$ConfirmText = '',          # type RESTORE at the prompt, or pass it here
     [switch]$DropTestDatabase,          # remove the test database after the check
     [string]$BackupDir = 'E:\TextileBackups',
-    [string]$XamppRoot = 'D:\XAMPPN',
+    [string]$XamppRoot = '',            # defaults to the XAMPP folder this project sits in
     [int]$Port = 3306
 )
 
@@ -18,8 +18,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'backup-common.ps1')
 
+if (-not $XamppRoot) { $XamppRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')) } # <xampp>\htdocs\textile-inventory\scripts
 $binDir = Join-Path $XamppRoot 'mysql\bin'
-$mysql = Join-Path $binDir 'mysql.exe'
+$mysql =Join-Path $binDir 'mysql.exe'
 $db = Read-DbConfig $XamppRoot (Join-Path $PSScriptRoot '..\backend\config\config.php')
 if (-not (Test-Path -LiteralPath $ZipPath)) { throw "Backup not found: $ZipPath" }
 if (-not $Live -and $TestDatabase -eq $db.name) { throw 'The test database cannot be the live database. Use -Live to replace live data.' }

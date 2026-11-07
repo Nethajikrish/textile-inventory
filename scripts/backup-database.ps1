@@ -3,9 +3,10 @@
 [CmdletBinding()]
 param(
     [string]$BackupDir = 'E:\TextileBackups',
-    [string]$XamppRoot = 'D:\XAMPPN',
+    [string]$XamppRoot = '',          # defaults to the XAMPP folder this project sits in
     [string]$DailyAt = '21:00',       # the scheduled time; a run is skipped if a backup already exists since then
     [string]$CopyTo = '',             # optional second folder, e.g. a pen drive or a cloud-synced folder
+    [switch]$GoogleDrive,             # also upload to Google Drive; sign in first with google-drive.php setup
     [int]$KeepDaily = 30,             # newest backups always kept
     [int]$KeepMonths = 12,            # plus the first backup of each of these months
     [int]$Port = 3306,
@@ -17,6 +18,7 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 . (Join-Path $PSScriptRoot 'backup-common.ps1')
 
+if (-not $XamppRoot) { $XamppRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..\..')) } # <xampp>\htdocs\textile-inventory\scripts
 $binDir = Join-Path $XamppRoot 'mysql\bin'
 if (-not $DefaultsFile) { $DefaultsFile = Join-Path $binDir 'my.ini' }
 $configPath = Join-Path $PSScriptRoot '..\backend\config\config.php'
@@ -69,6 +71,32 @@ function Remove-OldBackups([string]$DbName) {
     }
 }
 
+# Copies every kept backup the second folder lacks, so one missed while it was unavailable catches up on the next run.
+function Copy-Backups([string]$DbName) {
+    # Google Drive and pen drives can take a while to appear after logon.
+    $root = [IO.Path]::GetPathRoot($CopyTo)
+    $deadline = (Get-Date).AddSeconds(120)
+    while (-not (Test-Path -LiteralPath $root)) {
+        if ((Get-Date) -gt $deadline) { throw "The local backup is fine, but drive $root is not available to copy it to $CopyTo." }
+        Start-Sleep -Seconds 5
+    }
+    if (-not (Test-Path -LiteralPath $CopyTo)) { New-Item -ItemType Directory -Path $CopyTo | Out-Null }
+    foreach ($b in @(Get-Backups $DbName)) {
+        $target = Join-Path $CopyTo $b.File.Name
+        if (-not (Test-Path -LiteralPath $target) -or (Get-Item -LiteralPath $target).Length -ne $b.File.Length) {
+            Copy-Item -LiteralPath $b.File.FullName -Destination $target -Force
+            Write-Log "Copied $($b.File.Name) to $CopyTo"
+        }
+    }
+}
+
+# Runs on skipped runs too, so an upload missed while offline catches up.
+function Send-ToGoogleDrive([string]$DbName) {
+    $r = Invoke-Tool (Join-Path $XamppRoot 'php\php.exe') @("`"$(Join-Path $PSScriptRoot 'google-drive.php')`"", 'upload', "`"$BackupDir`"", $DbName)
+    if ($r.Output) { $r.Output.Trim() -split '\r?\n' | ForEach-Object { Write-Log $_ } }
+    if ($r.ExitCode -ne 0) { throw "The local backup is fine, but the Google Drive upload failed: $($r.Error)" }
+}
+
 # Dump to a working file, check it, zip it, check the zip, and only then give it its final name.
 function New-Backup($Db) {
     $stamp = Get-Date -Format 'yyyy-MM-dd_HHmm'
@@ -110,6 +138,8 @@ try {
         $slot = Get-LastSlot
         if (@(Get-Backups $db.name | Where-Object { $_.When -ge $slot }).Count -gt 0) {
             Write-Log "Skipped: already backed up since $($slot.ToString('yyyy-MM-dd HH:mm'))."
+            if ($CopyTo) { Copy-Backups $db.name }
+            if ($GoogleDrive) { Send-ToGoogleDrive $db.name }
             if (Test-Path -LiteralPath $warningFile) { Remove-Item -LiteralPath $warningFile }
             exit 0
         }
@@ -132,14 +162,10 @@ try {
     $backup = New-Backup $db
     Write-Log "OK: $($backup.Name) ($([math]::Round($backup.Length / 1KB, 1)) KB)"
 
-    if ($CopyTo) {
-        if (-not (Test-Path $CopyTo)) { New-Item -ItemType Directory -Path $CopyTo | Out-Null }
-        Copy-Item -LiteralPath $backup.FullName -Destination $CopyTo -Force
-        Write-Log "Copied to $CopyTo"
-    }
-
     # Only after a good backup, so repeated failures can never wipe the good ones.
     Remove-OldBackups $db.name
+    if ($CopyTo) { Copy-Backups $db.name }
+    if ($GoogleDrive) { Send-ToGoogleDrive $db.name }
     if (Test-Path -LiteralPath $warningFile) { Remove-Item -LiteralPath $warningFile }
 } catch {
     $failed = $true

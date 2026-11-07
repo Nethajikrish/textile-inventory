@@ -6,6 +6,7 @@ param(
     [string]$BackupDir = 'E:\TextileBackups',
     [string]$DailyAt = '21:00',
     [string]$CopyTo = '',
+    [switch]$GoogleDrive,
     [switch]$Uninstall
 )
 
@@ -18,9 +19,16 @@ if ($Uninstall) {
     exit 0
 }
 
+# A client PC may have no E: drive; catch that now rather than at 9 PM.
+if (-not (Test-Path ([IO.Path]::GetPathRoot($BackupDir)))) { throw "Drive for $BackupDir not found. Choose another folder with -BackupDir." }
+if ($GoogleDrive -and -not (Test-Path (Join-Path $env:LOCALAPPDATA 'TextileBackup\google-drive.json'))) {
+    throw 'Sign in to Google Drive first: php scripts\google-drive.php setup <client_secret.json>'
+}
+
 $script = Join-Path $PSScriptRoot 'backup-database.ps1'
 $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`" -BackupDir `"$BackupDir`" -DailyAt $DailyAt"
 if ($CopyTo) { $arguments += " -CopyTo `"$CopyTo`"" }
+if ($GoogleDrive) { $arguments += ' -GoogleDrive' }
 
 $user = "$env:USERDOMAIN\$env:USERNAME"
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $arguments

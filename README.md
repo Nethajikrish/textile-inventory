@@ -56,6 +56,9 @@ If a backup fails, `DATABASE BACKUP FAILED.txt` appears on the Desktop with the 
 # Set up (or -Uninstall to remove). Add -CopyTo <folder> for a second copy.
 powershell -ExecutionPolicy Bypass -File scripts\install-backup-task.ps1
 
+# Also upload to Google Drive (sign in first, see below)
+powershell -ExecutionPolicy Bypass -File scripts\install-backup-task.ps1 -GoogleDrive
+
 # Back up now
 powershell -ExecutionPolicy Bypass -File scripts\backup-database.ps1 -Force
 
@@ -67,6 +70,24 @@ powershell -ExecutionPolicy Bypass -File scripts\restore-database.ps1 -ZipPath E
 ```
 
 Product images in `backend/uploads/products` are not included.
+
+On a PC without an E: drive, add `-BackupDir C:\TextileBackups` to these commands.
+
+### Google Drive upload
+
+`scripts/google-drive.php` uploads each backup to a `TextileBackups` folder in Google Drive. It can only see files it created, and never deletes anything from Drive. A missed upload catches up on the next run; until then the Desktop warning stays.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
+2. Under **Google Auth Platform**, set up the consent screen as **External**, then **Publish app** to Production. While it is in Testing, the sign-in expires after 7 days and uploads stop.
+3. Under **Clients**, create an OAuth client of type **Desktop app** and download its JSON file.
+4. On the PC that runs the backup, signed in as the Windows user that runs the task:
+   ```
+   D:\XAMPPN\php\php.exe scripts\google-drive.php setup <downloaded file>.json
+   powershell -ExecutionPolicy Bypass -File scripts\install-backup-task.ps1 -GoogleDrive
+   ```
+   Sign in with the Google account that should hold the backups. Google warns that the app is unverified; choose **Advanced**, then continue. The sign-in is saved in `%LOCALAPPDATA%\TextileBackup\`, outside `htdocs`.
+
+To restore, download the zip from Drive and pass it to `restore-database.ps1 -ZipPath`.
 
 ## Setup
 
@@ -90,6 +111,7 @@ Product images in `backend/uploads/products` are not included.
    - the **contents** of `frontend/dist/` (`index.html`, `assets/`, `.htaccess`)
    - `backend/` (with `uploads/`)
    - `database/` (for the import only)
+   - `scripts/` (for the daily backup)
 
    Don't copy `frontend/` source or `node_modules`.
 3. Start Apache + MySQL, import `database/schema.sql` in phpMyAdmin (or import a dump of your existing data).
