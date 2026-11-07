@@ -128,7 +128,7 @@ export default function Products() {
         </div>
         <div className="flex gap-2">
           <Link
-            to={`/labels?items=${Object.keys(picked).map((id) => `${id}:1`).join(',')}`}
+            to={`/labels?items=${Object.keys(picked).map((id) => `${id}:2`).join(',')}`}
             className="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
           >
             Print stickers{Object.keys(picked).length ? ` (${Object.keys(picked).length})` : ''}
@@ -177,7 +177,7 @@ export default function Products() {
               <div className="text-xs text-slate-500">GST {Number(p.gst_percent)}%</div>
             </Td>
             <Td className="space-x-3 whitespace-nowrap text-right">
-              <Link to={`/labels?items=${p.id}:1`} className="text-slate-600 hover:underline">Sticker</Link>
+              <Link to={`/labels?items=${p.id}:2`} className="text-slate-600 hover:underline">Sticker</Link>
               <Link to={`/stock?tab=ledger&product=${p.id}`} className="text-slate-600 hover:underline">Ledger</Link>
               {canWrite && (
                 <>

@@ -18,7 +18,11 @@ function billFigures(sale) {
   const gstRows = inclusive
     ? gstSummary(sale.items)
     : [{ rate: Number(sale.tax_percent), taxable: Number(sale.taxable_amount), cgst: Number(sale.cgst_amount), sgst: Number(sale.sgst_amount) }];
+  // Totalled per unit: pieces and metres can't be added together.
+  const qtyByUnit = {};
+  sale.items.forEach((it) => { qtyByUnit[it.unit] = (qtyByUnit[it.unit] || 0) + Number(it.qty); });
   return {
+    totalQty: Object.entries(qtyByUnit).map(([unit, n]) => `${qty(n)} ${unit}`).join(', '),
     inclusive,
     mrpTotal,
     productDiscount,
@@ -38,8 +42,7 @@ const lineDiscLabel = (it) => (it.discount_type === 'percent' ? `${Number(it.dis
 
 // Printed on every bill that isn't cancelled.
 const returnPolicy = (sale) => [
-  'No Refund',
-  'No Return',
+  'No Refund / No Return',
   `Only Exchange within ${sale.return_days} days of the bill date (until ${fmtDate(sale.return_until)})`,
 ].map((line) => <div key={line}>{line}</div>);
 
@@ -163,6 +166,13 @@ export default function InvoicePrint() {
               </tr>
             ))}
           </tbody>
+          <tfoot>
+            <tr className="border-b-2 border-slate-300 font-semibold">
+              <td colSpan={2} className="py-2 text-right">Total Qty</td>
+              <td className="whitespace-nowrap py-2 text-right">{f.totalQty}</td>
+              <td colSpan={f.lineDiscounts ? 4 : 3} />
+            </tr>
+          </tfoot>
         </table>
 
         <div className="mt-4 flex justify-between gap-6">
@@ -299,6 +309,7 @@ function Receipt({ sale, company, f, duplicate }) {
         </div>
       ))}
       {hr}
+      <div className="font-semibold"><R label="Total Qty" value={f.totalQty} /></div>
       <R label="Subtotal" value={money(sale.subtotal)} />
       {f.discount > 0 && <R label={f.discountLabel} value={`- ${money(f.discount)}`} />}
       {!f.inclusive && (

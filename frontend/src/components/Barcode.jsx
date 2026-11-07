@@ -11,13 +11,14 @@ export default function Barcode({ value, className = '', style }) {
     if (!svg || !value) return;
     try {
       JsBarcode(svg, value, { format: 'CODE128', displayValue: false, margin: 0, width: 2, height: 60 });
-      svg.removeAttribute('width');
-      svg.removeAttribute('height');
+      svg.setAttribute('width', '100%');
+      svg.setAttribute('height', '100%');
       svg.setAttribute('preserveAspectRatio', 'none');
     } catch {
       svg.innerHTML = '';
     }
   }, [value]);
 
-  return <svg ref={ref} className={className} style={style} />;
+  // JsBarcode overwrites the svg's style attribute, so the size goes on a wrapper.
+  return <div className={className} style={style}><svg ref={ref} /></div>;
 }
